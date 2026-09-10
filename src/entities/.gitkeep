@@ -1,0 +1,1 @@
+# Add your TypeORM entity classes here (e.g. User.ts). They are auto-loaded by src/config/data-source.ts.
