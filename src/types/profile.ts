@@ -3,11 +3,12 @@ export type MeResponse = {
   email: string | null;
   fullName: string | null;
   avatarUrl: string | null;
+  role: string | null;
   emailConfirmed: boolean;
   metadata: Record<string, unknown>;
 };
 
-export type ProfileFieldErrors = Partial<Record<'fullName' | 'avatarUrl', string>>;
+export type ProfileFieldErrors = Partial<Record<'fullName' | 'avatarUrl' | 'role', string>>;
 
 export type ParsedProfilePatch = {
   errors: ProfileFieldErrors;

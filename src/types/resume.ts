@@ -81,6 +81,7 @@ export type PublicProfile = {
   id: string;
   fullName: string | null;
   avatarUrl: string | null;
+  role: string | null;
 };
 
 /** A resume post enriched for a feed card. `pdfUrl` is short-lived and never stored. */

@@ -6,6 +6,7 @@ import type { PublicProfile } from '../types/resume';
 
 const NAME_MIN = 2;
 const NAME_MAX = 80;
+const ROLE_MAX = 100;
 
 function readString(metadata: Record<string, unknown>, key: string): string | null {
   const value = metadata[key];
@@ -19,6 +20,7 @@ export function serializeProfile(user: AuthUser): MeResponse {
     email: user.email ?? null,
     fullName: readString(metadata, 'full_name'),
     avatarUrl: readString(metadata, 'avatar_url'),
+    role: readString(metadata, 'role'),
     emailConfirmed: Boolean(user.email_confirmed_at),
     metadata,
   };
@@ -60,6 +62,17 @@ export function parseProfilePatch(body: unknown, userId: string): ParsedProfileP
     else updates.avatar_url = value;
   }
 
+  if ('role' in input) {
+    const value = input.role;
+    if (value === null) updates.role = null;
+    else if (typeof value !== 'string') errors.role = 'Role must be text or null.';
+    else {
+      const trimmed = value.trim();
+      if (trimmed.length > ROLE_MAX) errors.role = 'Role must be 100 characters or fewer.';
+      else updates.role = trimmed || null;
+    }
+  }
+
   return { errors, updates };
 }
 
@@ -76,7 +89,20 @@ export async function updateProfile(
 }
 
 export function unknownProfile(id: string): PublicProfile {
-  return { id, fullName: null, avatarUrl: null };
+  return { id, fullName: null, avatarUrl: null, role: null };
+}
+
+/** Returns the limited set of profile details that is safe to show to another member. */
+export async function getPublicProfile(userId: string): Promise<PublicProfile | null> {
+  const { data, error } = await getSupabase().auth.admin.getUserById(userId);
+  if (error || !data.user) return null;
+  const metadata = data.user.user_metadata ?? {};
+  return {
+    id: data.user.id,
+    fullName: readString(metadata, 'full_name'),
+    avatarUrl: readString(metadata, 'avatar_url'),
+    role: readString(metadata, 'role'),
+  };
 }
 
 /**
@@ -94,6 +120,7 @@ export async function loadPublicProfiles(userIds: string[]): Promise<Map<string,
         id,
         fullName: readString(metadata, 'full_name'),
         avatarUrl: readString(metadata, 'avatar_url'),
+        role: readString(metadata, 'role'),
       };
     }),
   );

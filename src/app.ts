@@ -8,6 +8,7 @@ import { commentRouter } from './routes/comments';
 import { meRouter } from './routes/me';
 import { resumeRouter } from './routes/resumes';
 import { notificationRouter } from './routes/notifications';
+import { profileRouter } from './routes/profiles';
 
 export function createApp() {
   const app = express();
@@ -34,6 +35,7 @@ export function createApp() {
   });
 
   app.use('/api/me', withDatabase, meRouter);
+  app.use('/api/profiles', withDatabase, profileRouter);
   app.use('/api/resumes', withDatabase, resumeRouter);
   app.use('/api/comments', withDatabase, commentRouter);
   app.use('/api/notifications', withDatabase, notificationRouter);
