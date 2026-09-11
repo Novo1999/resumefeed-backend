@@ -25,7 +25,7 @@ that community angle — people helping each other get hired through honest crit
 | Dev | `npm run dev` → :3000 | `npm run dev` (tsx watch) → :4000 |
 | Git | branch `master`, 3 commits | branch `main`, 2 commits |
 
-Both are scaffolding. **No product feature is built in either repo yet.**
+Auth and the account page are built. **No resume feature exists in either repo yet.**
 
 ## Frontend state
 
@@ -33,19 +33,24 @@ Both are scaffolding. **No product feature is built in either repo yet.**
 |---|---|
 | Next.js + TS + Tailwind v4 config | Done |
 | Redux store, typed hooks, `Providers` in root layout | Done |
-| RTK Query `baseApi` pointed at `${NEXT_PUBLIC_API_URL}/api` | Done |
-| Dev-only RTK Query console logger | Done (uncommitted) |
-| Supabase browser client — PKCE, persisted session, singleton | Written, **zero call sites** |
-| 14 shadcn components vendored | Installed, **zero used** |
-| Routes | Only `/`, still create-next-app boilerplate |
-| Landing page, auth pages, feed, upload | Not started |
+| RTK Query `baseApi` at `${NEXT_PUBLIC_API_URL}/api`, bearer token attached | Done |
+| Dev-only RTK Query console logger | Done |
+| Supabase clients — browser, server (RSC), proxy | Done, cookie-based sessions |
+| Auth pages — `/login`, `/signup`, `/auth/callback`, server actions | Done |
+| Route gating + session refresh in `proxy.ts` | Done — `/account`, `/feed` |
+| Session-aware header with avatar + user menu | Done |
+| Account page — avatar upload, name edit, read-only email | Done |
+| Landing page (`/`) | create-next-app boilerplate |
+| Feed (`/feed`), resume upload | Empty state only / not started |
 
 Key files:
 - `store/api/baseApi.ts` — RTK Query root; inject feature endpoints here
-- `store/api/loggingBaseQuery.ts` — wraps the base query, console-groups every request
-- `lib/supabase/client.ts` — browser client singleton
+- `store/api/profileApi.ts` — `GET`/`PATCH /api/me`
+- `lib/supabase/{client,server,proxy}.ts` — one client per execution context
+- `lib/profile/user.ts` — narrows a Supabase user to what the UI renders
+- `lib/storage/avatars.ts` — browser-side avatar upload, validation, pruning
 - `lib/env.ts` — public runtime config
-- `app/layout.tsx` — metadata + `Providers`
+- `app/layout.tsx` — metadata, `Providers`, `SiteHeader`, `Toaster`
 
 ## Backend state
 
@@ -53,60 +58,70 @@ Key files:
 |---|---|
 | Express app factory, CORS (credentials on), JSON body parsing | Done |
 | `GET /health` | Done |
+| Auth middleware — `requireAuth`, `optionalAuth` | Done, verifies Supabase JWT |
+| `GET /api/me`, `PATCH /api/me` | Done — profile read/update |
+| Storage buckets + RLS policies | Done — `supabase/storage-setup.sql` |
 | TypeORM DataSource against Supabase Postgres | Configured, connects lazily |
-| Server Supabase client (service role key) | Written, **zero call sites** |
 | Entities | **None** — `src/entities/` holds only `.gitkeep` |
-| Routes under `/api` | **None mounted** |
-| Auth middleware | Not started |
+| Resume, review, rating routes | Not started |
 
 Key files:
 - `src/app.ts` — middleware + route mounting point
+- `src/routes/me.ts` — profile read/update; email is rejected, not ignored
+- `src/middleware/auth.ts` — token verification
 - `src/index.ts` — boots the DataSource, then listens; warns instead of crashing if the DB is unconfigured
 - `src/config/data-source.ts` — entity/migration globs
 - `src/config/supabase.ts` — service-role client
 - `src/config/env.ts` — server env config
+- `supabase/storage-setup.sql` — buckets and storage RLS, idempotent
 
 ## Seams between the two — known gaps
 
 These are the specific places the two halves don't meet yet.
 
-1. **The `/api` prefix has no counterpart.** The frontend calls
-   `${NEXT_PUBLIC_API_URL}/api/...`, but `src/app.ts` only registers `/health` and
-   leaves the `app.use('/api', router)` line as a comment. The first backend route
-   must be mounted under `/api` or the frontend base URL has to change.
+The `/api` prefix, the bearer token and server-readable sessions are all closed —
+`GET`/`PATCH /api/me` exercises the whole chain end to end. What is left:
 
-2. **No token crosses the wire.** `prepareHeaders` is commented out in
-   `store/api/baseApi.ts`, so every request reaches Express anonymous. The backend
-   has no middleware to verify a Supabase JWT either. Both sides need doing together:
-   attach the Supabase access token as a bearer header, and verify it server-side
-   (the service-role client can do this via `supabase.auth.getUser(token)`).
+1. **No domain model exists.** No entities, no migrations, no shared types. Resume,
+   Review, Rating, and Reaction all still need defining — and nothing currently
+   shares those shapes between the repos. `MeResponse` is hand-mirrored in
+   `src/routes/me.ts` and `store/api/profileApi.ts`; they drift silently.
 
-3. **Sessions are browser-only.** The frontend persists to `localStorage` and
-   `@supabase/ssr` is not installed, so no server component, route handler, or
-   middleware can read the session. Every gated page would have to be a client
-   component that flashes before redirecting. If server-side route protection or
-   SSR'd feed data is wanted, add `@supabase/ssr` and a `middleware.ts` **before**
-   building pages — retrofitting touches every protected route.
+2. **Profile changes are invisible to client components.** `PATCH /api/me` updates
+   the auth user with the service-role key, so the browser's cached JWT still holds
+   the old `user_metadata` until it refreshes. Server components are fine — they
+   call `getUser()`, which hits the auth server — which is why the account form ends
+   in `router.refresh()`. Anything reading metadata off the client session directly
+   would show stale values.
 
-4. **No domain model exists.** No entities, no migrations, no shared types. User,
-   Resume, Review, Rating, and Reaction all still need defining — and nothing
-   currently shares those shapes between the repos.
+3. **Nothing writes to the `resumes` bucket yet.** The bucket and its policies
+   exist; the upload UI and the signed-URL endpoint do not.
 
 ## Settled decisions
 
 - **Storage: Supabase Storage.** Decided 2026-09-11, replacing the earlier
   UploadThing note. Supabase is already the auth provider *and* the Postgres host,
   so this is one less vendor and one less key, and RLS can gate a resume file by the
-  same user ID that owns its row. The bucket name lives in
-  `NEXT_PUBLIC_SUPABASE_RESUME_BUCKET` (frontend) and `SUPABASE_RESUME_BUCKET`
-  (backend) — both default to `resumes` and must match.
+  same user ID that owns its row.
 
-  Deferred to the upload step (build order 5), not needed for auth:
-  - Create the `resumes` bucket in the Supabase dashboard as **private**, not public.
-  - RLS on `storage.objects`: a user may write only under a `{user_id}/` path
-    prefix, so ownership is enforced by the path itself.
-  - Serve files by signed URL rather than making the bucket public — the Express
-    API is the natural issuer, since it already has to authorize the request.
+  **Buckets created 2026-09-11** by `resumefeed-backend/supabase/storage-setup.sql`
+  — run that whole file in the Supabase SQL editor. It is idempotent.
+
+  - `avatars` — **public**, 2 MiB, PNG/JPEG/WebP. Profile pictures render on every
+    feed card, so a signed URL per render would be waste, and a picture is not PII
+    the way a resume is.
+  - `resumes` — **private**, 5 MiB, PDF only. Reads go through a signed URL minted
+    by the Express API, which is where "may this person see this resume?" is decided.
+  - Ownership in both buckets is the first path segment, `{user_id}/`, which the RLS
+    policies compare against `auth.uid()`. Uploads must keep writing that shape —
+    it is the only thing enforcing ownership.
+  - Bucket names live in `NEXT_PUBLIC_SUPABASE_{AVATAR,RESUME}_BUCKET` (frontend)
+    and `SUPABASE_{AVATAR,RESUME}_BUCKET` (backend). They must match.
+
+- **Profiles live in Supabase `user_metadata`, not a table.** `full_name` and
+  `avatar_url` are enough for now, and keeping them on the auth user means the
+  header and account page read them straight off the session with no join. Revisit
+  when a profile needs anything a reviewer would search on.
 
 ## Open decisions
 
@@ -120,14 +135,19 @@ These are the specific places the two halves don't meet yet.
 
 ## Suggested build order
 
-1. **Domain model** — entities + first migration, so both repos agree on shapes.
-2. **Auth end to end** — `/login`, `/signup`, Supabase callback handling,
-   `prepareHeaders` on the frontend, JWT-verifying middleware on the backend,
-   session-aware header UI.
-3. **Landing page** — the marketing pitch; first thing anyone sees.
+- ~~**Auth end to end**~~ — done: pages, server actions, `proxy.ts` gating, bearer
+  token, `requireAuth`, session-aware header.
+- ~~**Profiles and storage**~~ — done: both buckets with RLS, avatar upload,
+  `PATCH /api/me`.
+
+1. **Domain model** — Resume, Review, Rating, Reaction entities + first migration,
+   so both repos agree on shapes.
+2. **Landing page** — the marketing pitch; first thing anyone sees.
+3. **Upload** — a PDF into `resumes/{user_id}/`, plus the resume record. The avatar
+   path in `lib/storage/avatars.ts` is the template; resumes differ only in that
+   reads need a signed URL from the API.
 4. **Feed** — list resumes, `GET /api/resumes`.
-5. **Upload** — file storage + resume record.
-6. **Ratings and reviews** — the actual community loop.
+5. **Ratings and reviews** — the actual community loop.
 
 ## Running it locally
 
@@ -145,3 +165,7 @@ npm run dev                        # :3000
 
 The backend logs a warning rather than crashing when `DATABASE_URL` is unset, so
 the API will boot and serve `/health` before Postgres is wired up.
+
+Once per Supabase project, paste `resumefeed-backend/supabase/storage-setup.sql`
+into the dashboard's SQL editor and run it. Until that happens the account page
+loads but an avatar upload fails with `Bucket not found`.
