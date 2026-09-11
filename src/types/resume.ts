@@ -1,7 +1,36 @@
-/** Reactions supported by the first version of the resume feed. */
-export const REACTION_KINDS = ['helpful', 'insightful', 'encouraging'] as const;
+/** Reactions supported by the resume feed. One per person, per resume. */
+export const REACTION_KINDS = ['like', 'heart', 'fire', 'wow', 'haha'] as const;
 
 export type ReactionKind = (typeof REACTION_KINDS)[number];
+
+/** Tally of every kind on a resume. Kinds nobody picked are present as 0. */
+export type ReactionCounts = Record<ReactionKind, number>;
+
+export type ReactToResumeRequest = {
+  /** Null clears the viewer's reaction. */
+  kind: ReactionKind | null;
+};
+
+export type ResumeReactionResponse = {
+  resumeId: string;
+  viewerReaction: ReactionKind | null;
+  reactionCount: number;
+  reactionCounts: ReactionCounts;
+};
+
+/** A single person's reaction, for the "who reacted" list. */
+export type ResumeReactor = {
+  id: string;
+  kind: ReactionKind;
+  createdAt: string;
+  user: ResumeAuthor;
+};
+
+export type ResumeReactorsResponse = {
+  items: ResumeReactor[];
+  /** Opaque cursor for the next oldest page, or null when the list is exhausted. */
+  nextCursor: string | null;
+};
 
 export type CreateResumeRequest = {
   /** Private bucket path, always `<authenticated-user-id>/<uuid>.pdf`. */
@@ -75,6 +104,9 @@ export type FeedResumeResponse = {
   viewerRating: number | null;
   commentCount: number;
   reactionCount: number;
+  reactionCounts: ReactionCounts;
+  /** The signed-in viewer's reaction, if they left one. */
+  viewerReaction: ReactionKind | null;
   createdAt: string;
 };
 

@@ -11,9 +11,9 @@ import {
 import { Resume } from './resume';
 import { REACTION_KINDS, type ReactionKind } from '../types/resume';
 
-/** A person may leave one of each reaction kind on a resume. */
+/** One reaction per person, per resume. Picking another kind replaces it. */
 @Entity({ name: 'resume_reactions' })
-@Unique('UQ_resume_reactions_resume_author_kind', ['resumeId', 'authorId', 'kind'])
+@Unique('UQ_resume_reactions_resume_author', ['resumeId', 'authorId'])
 @Index('IDX_resume_reactions_resume_id', ['resumeId'])
 export class ResumeReaction {
   @PrimaryGeneratedColumn('uuid')

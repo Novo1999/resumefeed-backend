@@ -4,6 +4,8 @@ import { getSupabase } from '../config/supabase';
 import { In } from 'typeorm';
 import { Resume } from '../entities/resume';
 import { ResumeRating } from '../entities/resume-rating';
+import { ResumeReaction } from '../entities/resume-reaction';
+import { REACTION_KINDS } from '../types/resume';
 import type {
   CreateResumeRequest,
   FeedResumeResponse,
@@ -16,12 +18,19 @@ import type {
   ResumeRatingResponse,
   ResumeServiceErrorKind,
   RateResumeRequest,
+  ReactionCounts,
+  ReactionKind,
+  ReactToResumeRequest,
+  ResumeReactionResponse,
+  ResumeReactor,
+  ResumeReactorsResponse,
 } from '../types/resume';
 
 const TITLE_MAX_LENGTH = 120;
 const CAPTION_MAX_LENGTH = 500;
 const FILENAME_MAX_LENGTH = 255;
 const FEED_PAGE_SIZE = 10;
+const REACTORS_PAGE_SIZE = 20;
 const PDF_URL_TTL_SECONDS = 10 * 60;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -325,14 +334,29 @@ export async function getResumeFeed(
       ? encodeFeedCursor({ createdAt: lastCursorValue, id: resumes[resumes.length - 1].id })
       : null;
 
-  const authors = await loadAuthors(resumes.map((resume) => resume.ownerId));
-  const viewerRatings = await AppDataSource.getRepository(ResumeRating).findBy({
-    authorId: viewerId,
-    resumeId: In(resumes.map((resume) => resume.id)),
-  });
+  if (resumes.length === 0) return { items: [], nextCursor: null };
+
+  const resumeIds = resumes.map((resume) => resume.id);
+  const [authors, viewerRatings, viewerReactions, reactionCounts] = await Promise.all([
+    loadAuthors(resumes.map((resume) => resume.ownerId)),
+    AppDataSource.getRepository(ResumeRating).findBy({
+      authorId: viewerId,
+      resumeId: In(resumeIds),
+    }),
+    AppDataSource.getRepository(ResumeReaction).findBy({
+      authorId: viewerId,
+      resumeId: In(resumeIds),
+    }),
+    loadReactionCounts(resumeIds),
+  ]);
+
   const viewerRatingByResumeId = new Map(
     viewerRatings.map((rating) => [rating.resumeId, rating.score]),
   );
+  const viewerReactionByResumeId = new Map(
+    viewerReactions.map((reaction) => [reaction.resumeId, reaction.kind]),
+  );
+
   const items: FeedResumeResponse[] = await Promise.all(
     resumes.map(async (resume) => ({
       id: resume.id,
@@ -350,6 +374,8 @@ export async function getResumeFeed(
       viewerRating: viewerRatingByResumeId.get(resume.id) ?? null,
       commentCount: resume.commentCount,
       reactionCount: resume.reactionCount,
+      reactionCounts: reactionCounts.get(resume.id) ?? emptyReactionCounts(),
+      viewerReaction: viewerReactionByResumeId.get(resume.id) ?? null,
       createdAt: resume.createdAt.toISOString(),
     })),
   );
@@ -362,4 +388,143 @@ export async function getResumeDocument(resumeId: string): Promise<ResumeDocumen
   const resume = await AppDataSource.getRepository(Resume).findOneBy({ id: resumeId });
   if (!resume) throw new ResumeServiceError('Resume not found.', 'not_found');
   return { url: await createPdfUrl(resume.storagePath), expiresIn: PDF_URL_TTL_SECONDS };
+}
+
+function emptyReactionCounts(): ReactionCounts {
+  return Object.fromEntries(REACTION_KINDS.map((kind) => [kind, 0])) as ReactionCounts;
+}
+
+/** Tallies every kind per resume in one grouped query. */
+async function loadReactionCounts(resumeIds: string[]): Promise<Map<string, ReactionCounts>> {
+  const tallies = new Map(resumeIds.map((id) => [id, emptyReactionCounts()]));
+  if (resumeIds.length === 0) return tallies;
+
+  const rows = await AppDataSource.getRepository(ResumeReaction)
+    .createQueryBuilder('reaction')
+    .select('reaction.resume_id', 'resumeId')
+    .addSelect('reaction.kind', 'kind')
+    .addSelect('count(*)::integer', 'total')
+    .where('reaction.resume_id IN (:...resumeIds)', { resumeIds })
+    .groupBy('reaction.resume_id')
+    .addGroupBy('reaction.kind')
+    .getRawMany<{ resumeId: string; kind: ReactionKind; total: number }>();
+
+  for (const row of rows) {
+    const counts = tallies.get(row.resumeId);
+    if (counts) counts[row.kind] = row.total;
+  }
+  return tallies;
+}
+
+export function parseResumeReaction(body: unknown): ReactToResumeRequest {
+  if (typeof body !== 'object' || body === null) {
+    throw new ResumeServiceError('Expected a JSON object.', 'bad_request');
+  }
+
+  const kind = (body as { kind?: unknown }).kind;
+  if (kind === null) return { kind: null };
+
+  if (typeof kind !== 'string' || !REACTION_KINDS.includes(kind as ReactionKind)) {
+    throw new ResumeServiceError(
+      `Reaction must be null or one of: ${REACTION_KINDS.join(', ')}.`,
+      'bad_request',
+    );
+  }
+  return { kind: kind as ReactionKind };
+}
+
+/** Sets, replaces, or clears the caller's single reaction and returns fresh tallies. */
+export async function reactToResume(
+  resumeId: string,
+  userId: string,
+  kind: ReactionKind | null,
+): Promise<ResumeReactionResponse> {
+  assertDatabase();
+  assertResumeId(resumeId);
+
+  const resumeRepository = AppDataSource.getRepository(Resume);
+  if (!(await resumeRepository.existsBy({ id: resumeId }))) {
+    throw new ResumeServiceError('Resume not found.', 'not_found');
+  }
+
+  const reactionRepository = AppDataSource.getRepository(ResumeReaction);
+  if (kind === null) {
+    await reactionRepository.delete({ resumeId, authorId: userId });
+  } else {
+    await reactionRepository.upsert(
+      { resumeId, authorId: userId, kind },
+      { conflictPaths: ['resumeId', 'authorId'] },
+    );
+  }
+
+  const [refreshed, counts] = await Promise.all([
+    resumeRepository.findOneByOrFail({ id: resumeId }),
+    loadReactionCounts([resumeId]),
+  ]);
+
+  return {
+    resumeId,
+    viewerReaction: kind,
+    reactionCount: refreshed.reactionCount,
+    reactionCounts: counts.get(resumeId) ?? emptyReactionCounts(),
+  };
+}
+
+/** Everyone who reacted to a resume, newest first, one page at a time. */
+export async function getResumeReactors(
+  resumeId: string,
+  cursor: string | undefined,
+): Promise<ResumeReactorsResponse> {
+  assertDatabase();
+  assertResumeId(resumeId);
+  const parsedCursor = parseFeedCursor(cursor);
+
+  if (!(await AppDataSource.getRepository(Resume).existsBy({ id: resumeId }))) {
+    throw new ResumeServiceError('Resume not found.', 'not_found');
+  }
+
+  const query = AppDataSource.getRepository(ResumeReaction)
+    .createQueryBuilder('reaction')
+    .addSelect(
+      `to_char(reaction.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+      'reactor_cursor_created_at',
+    )
+    .where('reaction.resume_id = :resumeId', { resumeId })
+    .orderBy('reaction.created_at', 'DESC')
+    .addOrderBy('reaction.id', 'DESC')
+    .take(REACTORS_PAGE_SIZE + 1);
+
+  if (parsedCursor) {
+    query.andWhere(
+      '(reaction.created_at, reaction.id) < (:createdAt::timestamptz, :id::uuid)',
+      parsedCursor,
+    );
+  }
+
+  const { entities: fetched, raw } = await query.getRawAndEntities();
+  const reactions = fetched.slice(0, REACTORS_PAGE_SIZE);
+  if (reactions.length === 0) return { items: [], nextCursor: null };
+
+  const lastCursorValue = raw[reactions.length - 1]?.reactor_cursor_created_at;
+  const nextCursor =
+    fetched.length > REACTORS_PAGE_SIZE && typeof lastCursorValue === 'string'
+      ? encodeFeedCursor({
+          createdAt: lastCursorValue,
+          id: reactions[reactions.length - 1].id,
+        })
+      : null;
+
+  const authors = await loadAuthors(reactions.map((reaction) => reaction.authorId));
+  const items: ResumeReactor[] = reactions.map((reaction) => ({
+    id: reaction.id,
+    kind: reaction.kind,
+    createdAt: reaction.createdAt.toISOString(),
+    user: authors.get(reaction.authorId) ?? {
+      id: reaction.authorId,
+      fullName: null,
+      avatarUrl: null,
+    },
+  }));
+
+  return { items, nextCursor };
 }

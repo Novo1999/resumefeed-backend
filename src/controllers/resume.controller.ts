@@ -3,8 +3,11 @@ import {
   createResume,
   getResumeDocument,
   getResumeFeed,
+  getResumeReactors,
   parseResumeRating,
+  parseResumeReaction,
   rateResume,
+  reactToResume,
   parseResumeCreate,
   ResumeServiceError,
 } from '../services/resume.service';
@@ -63,6 +66,29 @@ export async function putResumeRating(req: Request, res: Response) {
 export async function getResumePdf(req: Request, res: Response) {
   try {
     res.json(await getResumeDocument(req.params.resumeId));
+  } catch (err) {
+    sendResumeError(err, res);
+  }
+}
+
+export async function putResumeReaction(req: Request, res: Response) {
+  try {
+    const { kind } = parseResumeReaction(req.body);
+    res.json(await reactToResume(req.params.resumeId, req.user!.id, kind));
+  } catch (err) {
+    sendResumeError(err, res);
+  }
+}
+
+export async function listResumeReactors(req: Request, res: Response) {
+  const cursor = req.query.cursor;
+  if (cursor !== undefined && typeof cursor !== 'string') {
+    res.status(400).json({ error: 'Cursor must be a single string.' });
+    return;
+  }
+
+  try {
+    res.json(await getResumeReactors(req.params.resumeId, cursor));
   } catch (err) {
     sendResumeError(err, res);
   }
