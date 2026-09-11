@@ -1,6 +1,7 @@
 import { AppDataSource } from '../config/data-source';
 import { env } from '../config/env';
 import { getSupabase } from '../config/supabase';
+import { In } from 'typeorm';
 import { Resume } from '../entities/resume';
 import { ResumeRating } from '../entities/resume-rating';
 import type {
@@ -303,7 +304,7 @@ export async function getResumeFeed(cursor: string | undefined, viewerId: string
   const authors = await loadAuthors(resumes.map((resume) => resume.ownerId));
   const viewerRatings = await AppDataSource.getRepository(ResumeRating).findBy({
     authorId: viewerId,
-    resumeId: resumes.map((resume) => resume.id),
+    resumeId: In(resumes.map((resume) => resume.id)),
   });
   const viewerRatingByResumeId = new Map(viewerRatings.map((rating) => [rating.resumeId, rating.score]));
   const items: FeedResumeResponse[] = await Promise.all(
