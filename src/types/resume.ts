@@ -26,6 +26,18 @@ export type ResumeResponse = {
 
 export type ResumeFieldErrors = Partial<Record<'storagePath' | 'originalFilename' | 'title', string>>;
 
+export type ParsedResumeCreate = {
+  values: CreateResumeRequest | null;
+  errors: ResumeFieldErrors;
+};
+
+export type ResumeServiceErrorKind =
+  | 'bad_request'
+  | 'conflict'
+  | 'not_found'
+  | 'database_unavailable'
+  | 'dependency';
+
 /** Public profile fields safe to show beside a feed post. */
 export type ResumeAuthor = {
   id: string;
