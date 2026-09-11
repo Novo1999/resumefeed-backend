@@ -1,7 +1,10 @@
 import cors from 'cors';
 import express from 'express';
+import { AppDataSource, ensureDatabase } from './config/data-source';
 import { env } from './config/env';
+import { withDatabase } from './middleware/database';
 import { httpLogger } from './middleware/logger';
+import { commentRouter } from './routes/comments';
 import { meRouter } from './routes/me';
 import { resumeRouter } from './routes/resumes';
 
@@ -14,8 +17,24 @@ export function createApp() {
 
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
-  app.use('/api/me', meRouter);
-  app.use('/api/resumes', resumeRouter);
+  app.get('/health/db', async (_req, res) => {
+    try {
+      await ensureDatabase();
+      await AppDataSource.query('select 1');
+      res.json({ status: 'ok', database: 'connected' });
+    } catch (err) {
+      res.status(503).json({
+        status: 'error',
+        database: 'disconnected',
+        databaseUrlSet: Boolean(env.databaseUrl),
+        message: (err as Error).message,
+      });
+    }
+  });
+
+  app.use('/api/me', withDatabase, meRouter);
+  app.use('/api/resumes', withDatabase, resumeRouter);
+  app.use('/api/comments', withDatabase, commentRouter);
 
   return app;
 }

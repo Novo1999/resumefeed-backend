@@ -23,7 +23,7 @@ export type ResumeReactor = {
   id: string;
   kind: ReactionKind;
   createdAt: string;
-  user: ResumeAuthor;
+  user: PublicProfile;
 };
 
 export type ResumeReactorsResponse = {
@@ -76,15 +76,8 @@ export type ParsedResumeCreate = {
   errors: ResumeFieldErrors;
 };
 
-export type ResumeServiceErrorKind =
-  | 'bad_request'
-  | 'conflict'
-  | 'not_found'
-  | 'database_unavailable'
-  | 'dependency';
-
-/** Public profile fields safe to show beside a feed post. */
-export type ResumeAuthor = {
+/** Profile fields safe to show beside anyone — a resume owner, a commenter, a reactor. */
+export type PublicProfile = {
   id: string;
   fullName: string | null;
   avatarUrl: string | null;
@@ -96,7 +89,7 @@ export type FeedResumeResponse = {
   title: string | null;
   caption: string | null;
   originalFilename: string;
-  author: ResumeAuthor;
+  author: PublicProfile;
   pdfUrl: string;
   ratingCount: number;
   averageRating: number | null;

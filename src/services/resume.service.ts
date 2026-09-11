@@ -1,4 +1,7 @@
 import { AppDataSource } from '../config/data-source';
+import { assertUuid, encodeCursor, microsecondTimestamp, parseCursor } from './cursor';
+import { loadPublicProfiles, unknownProfile } from './profile.service';
+import { ServiceError } from './service-error';
 import { env } from '../config/env';
 import { getSupabase } from '../config/supabase';
 import { In } from 'typeorm';
@@ -10,13 +13,11 @@ import type {
   CreateResumeRequest,
   FeedResumeResponse,
   ParsedResumeCreate,
-  ResumeAuthor,
   ResumeDocumentResponse,
   ResumeFeedResponse,
   ResumeFieldErrors,
   ResumeResponse,
   ResumeRatingResponse,
-  ResumeServiceErrorKind,
   RateResumeRequest,
   ReactionCounts,
   ReactionKind,
@@ -32,26 +33,10 @@ const FILENAME_MAX_LENGTH = 255;
 const FEED_PAGE_SIZE = 10;
 const REACTORS_PAGE_SIZE = 20;
 const PDF_URL_TTL_SECONDS = 10 * 60;
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-type FeedCursor = {
-  createdAt: string;
-  id: string;
-};
-
-export class ResumeServiceError extends Error {
-  constructor(
-    message: string,
-    public readonly kind: ResumeServiceErrorKind,
-    public readonly fieldErrors?: ResumeFieldErrors,
-  ) {
-    super(message);
-  }
-}
 
 function assertDatabase() {
   if (!AppDataSource.isInitialized) {
-    throw new ResumeServiceError('Database is not connected.', 'database_unavailable');
+    throw new ServiceError('Database is not connected.', 'database_unavailable');
   }
 }
 
@@ -69,37 +54,6 @@ function serializeResume(resume: Resume): ResumeResponse {
     reactionCount: resume.reactionCount,
     createdAt: resume.createdAt.toISOString(),
   };
-}
-
-function assertResumeId(resumeId: string): void {
-  if (!UUID_PATTERN.test(resumeId))
-    throw new ResumeServiceError('Invalid resume ID.', 'bad_request');
-}
-
-function encodeFeedCursor(cursor: FeedCursor): string {
-  return Buffer.from(JSON.stringify(cursor)).toString('base64url');
-}
-
-function parseFeedCursor(cursor: string | undefined): FeedCursor | null {
-  if (!cursor) return null;
-  if (cursor.length > 512) throw new ResumeServiceError('Invalid feed cursor.', 'bad_request');
-
-  try {
-    const parsed: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
-    if (
-      typeof parsed !== 'object' ||
-      parsed === null ||
-      typeof (parsed as FeedCursor).createdAt !== 'string' ||
-      Number.isNaN(Date.parse((parsed as FeedCursor).createdAt)) ||
-      typeof (parsed as FeedCursor).id !== 'string' ||
-      !UUID_PATTERN.test((parsed as FeedCursor).id)
-    ) {
-      throw new Error('Malformed cursor');
-    }
-    return parsed as FeedCursor;
-  } catch {
-    throw new ResumeServiceError('Invalid feed cursor.', 'bad_request');
-  }
 }
 
 export function parseResumeCreate(body: unknown, userId: string): ParsedResumeCreate {
@@ -185,12 +139,12 @@ export function parseResumeRating(body: unknown): RateResumeRequest {
     body === null ||
     !Number.isInteger((body as { score?: unknown }).score)
   ) {
-    throw new ResumeServiceError('Rating score must be a whole number from 1 to 5.', 'bad_request');
+    throw new ServiceError('Rating score must be a whole number from 1 to 5.', 'bad_request');
   }
 
   const score = (body as { score: number }).score;
   if (score < 1 || score > 5) {
-    throw new ResumeServiceError('Rating score must be between 1 and 5.', 'bad_request');
+    throw new ServiceError('Rating score must be between 1 and 5.', 'bad_request');
   }
   return { score };
 }
@@ -200,28 +154,8 @@ async function hasUploadedPdf(userId: string, storagePath: string): Promise<bool
   const { data, error } = await getSupabase()
     .storage.from(env.supabaseResumeBucket)
     .list(userId, { limit: 1, search: objectName });
-  if (error) throw new ResumeServiceError(error.message, 'dependency');
+  if (error) throw new ServiceError(error.message, 'dependency');
   return data?.find((item) => item.name === objectName)?.metadata?.mimetype === 'application/pdf';
-}
-
-function profileText(metadata: Record<string, unknown> | undefined, key: string): string | null {
-  const value = metadata?.[key];
-  return typeof value === 'string' && value.length > 0 ? value : null;
-}
-
-async function loadAuthors(ownerIds: string[]): Promise<Map<string, ResumeAuthor>> {
-  const authors = await Promise.all(
-    [...new Set(ownerIds)].map(async (id): Promise<ResumeAuthor> => {
-      const { data, error } = await getSupabase().auth.admin.getUserById(id);
-      if (error || !data.user) return { id, fullName: null, avatarUrl: null };
-      return {
-        id,
-        fullName: profileText(data.user.user_metadata, 'full_name'),
-        avatarUrl: profileText(data.user.user_metadata, 'avatar_url'),
-      };
-    }),
-  );
-  return new Map(authors.map((author) => [author.id, author]));
 }
 
 async function createPdfUrl(storagePath: string): Promise<string> {
@@ -229,10 +163,7 @@ async function createPdfUrl(storagePath: string): Promise<string> {
     .storage.from(env.supabaseResumeBucket)
     .createSignedUrl(storagePath, PDF_URL_TTL_SECONDS);
   if (error || !data?.signedUrl) {
-    throw new ResumeServiceError(
-      error?.message ?? 'Could not create a PDF viewing link.',
-      'dependency',
-    );
+    throw new ServiceError(error?.message ?? 'Could not create a PDF viewing link.', 'dependency');
   }
   return data.signedUrl;
 }
@@ -243,7 +174,7 @@ export async function createResume(
 ): Promise<ResumeResponse> {
   assertDatabase();
   if (!(await hasUploadedPdf(userId, values.storagePath))) {
-    throw new ResumeServiceError(
+    throw new ServiceError(
       'The uploaded file could not be found as a PDF in your resume bucket.',
       'bad_request',
       { storagePath: 'Upload a PDF before creating its post.' },
@@ -265,7 +196,7 @@ export async function createResume(
     return serializeResume(created);
   } catch (err) {
     if ((err as { code?: string }).code === '23505') {
-      throw new ResumeServiceError('That PDF has already been posted.', 'conflict');
+      throw new ServiceError('That PDF has already been posted.', 'conflict');
     }
     throw err;
   }
@@ -278,11 +209,11 @@ export async function rateResume(
   score: number,
 ): Promise<ResumeRatingResponse> {
   assertDatabase();
-  assertResumeId(resumeId);
+  assertUuid(resumeId, 'resume ID');
 
   const resumeRepository = AppDataSource.getRepository(Resume);
   if (!(await resumeRepository.existsBy({ id: resumeId }))) {
-    throw new ResumeServiceError('Resume not found.', 'not_found');
+    throw new ServiceError('Resume not found.', 'not_found');
   }
 
   await AppDataSource.getRepository(ResumeRating).upsert(
@@ -306,14 +237,11 @@ export async function getResumeFeed(
   viewerId: string,
 ): Promise<ResumeFeedResponse> {
   assertDatabase();
-  const parsedCursor = parseFeedCursor(cursor);
+  const parsedCursor = parseCursor(cursor);
   const query = AppDataSource.getRepository(Resume)
     .createQueryBuilder('resume')
     // Keep the database's microsecond timestamp intact for the next cursor.
-    .addSelect(
-      `to_char(resume.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
-      'feed_cursor_created_at',
-    )
+    .addSelect(microsecondTimestamp('resume.created_at'), 'feed_cursor_created_at')
     .orderBy('resume.created_at', 'DESC')
     .addOrderBy('resume.id', 'DESC')
     .take(FEED_PAGE_SIZE + 1);
@@ -331,14 +259,14 @@ export async function getResumeFeed(
   const lastCursorValue = raw[resumes.length - 1]?.feed_cursor_created_at;
   const nextCursor =
     hasNextPage && resumes.length > 0 && typeof lastCursorValue === 'string'
-      ? encodeFeedCursor({ createdAt: lastCursorValue, id: resumes[resumes.length - 1].id })
+      ? encodeCursor({ createdAt: lastCursorValue, id: resumes[resumes.length - 1].id })
       : null;
 
   if (resumes.length === 0) return { items: [], nextCursor: null };
 
   const resumeIds = resumes.map((resume) => resume.id);
   const [authors, viewerRatings, viewerReactions, reactionCounts] = await Promise.all([
-    loadAuthors(resumes.map((resume) => resume.ownerId)),
+    loadPublicProfiles(resumes.map((resume) => resume.ownerId)),
     AppDataSource.getRepository(ResumeRating).findBy({
       authorId: viewerId,
       resumeId: In(resumeIds),
@@ -363,11 +291,7 @@ export async function getResumeFeed(
       title: resume.title,
       caption: resume.caption,
       originalFilename: resume.originalFilename,
-      author: authors.get(resume.ownerId) ?? {
-        id: resume.ownerId,
-        fullName: null,
-        avatarUrl: null,
-      },
+      author: authors.get(resume.ownerId) ?? unknownProfile(resume.ownerId),
       pdfUrl: await createPdfUrl(resume.storagePath),
       ratingCount: resume.ratingCount,
       averageRating: resume.averageRating,
@@ -384,9 +308,9 @@ export async function getResumeFeed(
 
 export async function getResumeDocument(resumeId: string): Promise<ResumeDocumentResponse> {
   assertDatabase();
-  assertResumeId(resumeId);
+  assertUuid(resumeId, 'resume ID');
   const resume = await AppDataSource.getRepository(Resume).findOneBy({ id: resumeId });
-  if (!resume) throw new ResumeServiceError('Resume not found.', 'not_found');
+  if (!resume) throw new ServiceError('Resume not found.', 'not_found');
   return { url: await createPdfUrl(resume.storagePath), expiresIn: PDF_URL_TTL_SECONDS };
 }
 
@@ -418,14 +342,14 @@ async function loadReactionCounts(resumeIds: string[]): Promise<Map<string, Reac
 
 export function parseResumeReaction(body: unknown): ReactToResumeRequest {
   if (typeof body !== 'object' || body === null) {
-    throw new ResumeServiceError('Expected a JSON object.', 'bad_request');
+    throw new ServiceError('Expected a JSON object.', 'bad_request');
   }
 
   const kind = (body as { kind?: unknown }).kind;
   if (kind === null) return { kind: null };
 
   if (typeof kind !== 'string' || !REACTION_KINDS.includes(kind as ReactionKind)) {
-    throw new ResumeServiceError(
+    throw new ServiceError(
       `Reaction must be null or one of: ${REACTION_KINDS.join(', ')}.`,
       'bad_request',
     );
@@ -440,11 +364,11 @@ export async function reactToResume(
   kind: ReactionKind | null,
 ): Promise<ResumeReactionResponse> {
   assertDatabase();
-  assertResumeId(resumeId);
+  assertUuid(resumeId, 'resume ID');
 
   const resumeRepository = AppDataSource.getRepository(Resume);
   if (!(await resumeRepository.existsBy({ id: resumeId }))) {
-    throw new ResumeServiceError('Resume not found.', 'not_found');
+    throw new ServiceError('Resume not found.', 'not_found');
   }
 
   const reactionRepository = AppDataSource.getRepository(ResumeReaction);
@@ -476,19 +400,16 @@ export async function getResumeReactors(
   cursor: string | undefined,
 ): Promise<ResumeReactorsResponse> {
   assertDatabase();
-  assertResumeId(resumeId);
-  const parsedCursor = parseFeedCursor(cursor);
+  assertUuid(resumeId, 'resume ID');
+  const parsedCursor = parseCursor(cursor);
 
   if (!(await AppDataSource.getRepository(Resume).existsBy({ id: resumeId }))) {
-    throw new ResumeServiceError('Resume not found.', 'not_found');
+    throw new ServiceError('Resume not found.', 'not_found');
   }
 
   const query = AppDataSource.getRepository(ResumeReaction)
     .createQueryBuilder('reaction')
-    .addSelect(
-      `to_char(reaction.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
-      'reactor_cursor_created_at',
-    )
+    .addSelect(microsecondTimestamp('reaction.created_at'), 'reactor_cursor_created_at')
     .where('reaction.resume_id = :resumeId', { resumeId })
     .orderBy('reaction.created_at', 'DESC')
     .addOrderBy('reaction.id', 'DESC')
@@ -508,22 +429,18 @@ export async function getResumeReactors(
   const lastCursorValue = raw[reactions.length - 1]?.reactor_cursor_created_at;
   const nextCursor =
     fetched.length > REACTORS_PAGE_SIZE && typeof lastCursorValue === 'string'
-      ? encodeFeedCursor({
+      ? encodeCursor({
           createdAt: lastCursorValue,
           id: reactions[reactions.length - 1].id,
         })
       : null;
 
-  const authors = await loadAuthors(reactions.map((reaction) => reaction.authorId));
+  const authors = await loadPublicProfiles(reactions.map((reaction) => reaction.authorId));
   const items: ResumeReactor[] = reactions.map((reaction) => ({
     id: reaction.id,
     kind: reaction.kind,
     createdAt: reaction.createdAt.toISOString(),
-    user: authors.get(reaction.authorId) ?? {
-      id: reaction.authorId,
-      fullName: null,
-      avatarUrl: null,
-    },
+    user: authors.get(reaction.authorId) ?? unknownProfile(reaction.authorId),
   }));
 
   return { items, nextCursor };

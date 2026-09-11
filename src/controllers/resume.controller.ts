@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { sendServiceError } from './service-error.controller';
 import {
   createResume,
   getResumeDocument,
@@ -9,23 +10,7 @@ import {
   rateResume,
   reactToResume,
   parseResumeCreate,
-  ResumeServiceError,
 } from '../services/resume.service';
-
-function sendResumeError(error: unknown, res: Response) {
-  if (error instanceof ResumeServiceError) {
-    const status = {
-      bad_request: 400,
-      conflict: 409,
-      not_found: 404,
-      database_unavailable: 503,
-      dependency: 502,
-    }[error.kind];
-    res.status(status).json({ error: error.message, fieldErrors: error.fieldErrors });
-    return;
-  }
-  res.status(500).json({ error: (error as Error).message });
-}
 
 export async function postResume(req: Request, res: Response) {
   const { values, errors } = parseResumeCreate(req.body, req.user!.id);
@@ -36,7 +21,7 @@ export async function postResume(req: Request, res: Response) {
   try {
     res.status(201).json(await createResume(req.user!.id, values));
   } catch (err) {
-    sendResumeError(err, res);
+    sendServiceError(err, res);
   }
 }
 
@@ -50,7 +35,7 @@ export async function listResumes(req: Request, res: Response) {
   try {
     res.json(await getResumeFeed(cursor, req.user!.id));
   } catch (err) {
-    sendResumeError(err, res);
+    sendServiceError(err, res);
   }
 }
 
@@ -59,7 +44,7 @@ export async function putResumeRating(req: Request, res: Response) {
     const { score } = parseResumeRating(req.body);
     res.json(await rateResume(req.params.resumeId, req.user!.id, score));
   } catch (err) {
-    sendResumeError(err, res);
+    sendServiceError(err, res);
   }
 }
 
@@ -67,7 +52,7 @@ export async function getResumePdf(req: Request, res: Response) {
   try {
     res.json(await getResumeDocument(req.params.resumeId));
   } catch (err) {
-    sendResumeError(err, res);
+    sendServiceError(err, res);
   }
 }
 
@@ -76,7 +61,7 @@ export async function putResumeReaction(req: Request, res: Response) {
     const { kind } = parseResumeReaction(req.body);
     res.json(await reactToResume(req.params.resumeId, req.user!.id, kind));
   } catch (err) {
-    sendResumeError(err, res);
+    sendServiceError(err, res);
   }
 }
 
@@ -90,6 +75,6 @@ export async function listResumeReactors(req: Request, res: Response) {
   try {
     res.json(await getResumeReactors(req.params.resumeId, cursor));
   } catch (err) {
-    sendResumeError(err, res);
+    sendServiceError(err, res);
   }
 }

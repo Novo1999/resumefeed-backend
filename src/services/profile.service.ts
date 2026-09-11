@@ -2,6 +2,7 @@ import type { AuthUser } from '@supabase/supabase-js';
 import { env } from '../config/env';
 import { getSupabase } from '../config/supabase';
 import type { MeResponse, ParsedProfilePatch, ProfileFieldErrors } from '../types/profile';
+import type { PublicProfile } from '../types/resume';
 
 const NAME_MIN = 2;
 const NAME_MAX = 80;
@@ -72,4 +73,29 @@ export async function updateProfile(
   });
   if (error || !data.user) throw new Error(error?.message ?? 'Could not update your profile.');
   return data.user;
+}
+
+export function unknownProfile(id: string): PublicProfile {
+  return { id, fullName: null, avatarUrl: null };
+}
+
+/**
+ * Hydrates the profile shown beside a post, a comment, or a reaction. Supabase
+ * Auth is the source of truth for profiles, so this fans out one call per
+ * distinct user rather than joining a table that does not exist.
+ */
+export async function loadPublicProfiles(userIds: string[]): Promise<Map<string, PublicProfile>> {
+  const profiles = await Promise.all(
+    [...new Set(userIds)].map(async (id): Promise<PublicProfile> => {
+      const { data, error } = await getSupabase().auth.admin.getUserById(id);
+      if (error || !data.user) return unknownProfile(id);
+      const metadata = data.user.user_metadata ?? {};
+      return {
+        id,
+        fullName: readString(metadata, 'full_name'),
+        avatarUrl: readString(metadata, 'avatar_url'),
+      };
+    }),
+  );
+  return new Map(profiles.map((profile) => [profile.id, profile]));
 }

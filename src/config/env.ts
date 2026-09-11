@@ -16,6 +16,8 @@ export const env = {
   dbMigrationsRun: process.env.DB_MIGRATIONS_RUN !== 'false',
   dbLogging: process.env.DB_LOGGING === 'true',
   dbSsl: process.env.DB_SSL !== 'false',
+  // Serverless instances are many and short-lived; keep each one's pool tiny.
+  dbPoolMax: Number(process.env.DB_POOL_MAX ?? 1),
 
   supabaseUrl: process.env.SUPABASE_URL ?? '',
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',

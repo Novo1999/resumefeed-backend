@@ -1,11 +1,11 @@
 import 'reflect-metadata';
 import app from './app';
-import { AppDataSource } from './config/data-source';
+import { ensureDatabase } from './config/data-source';
 import { env } from './config/env';
 
 async function bootstrap() {
   try {
-    await AppDataSource.initialize();
+    await ensureDatabase();
     console.log('✅ Database connected');
   } catch (err) {
     // Don't crash during setup if the DB isn't configured yet.
