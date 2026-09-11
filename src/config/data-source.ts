@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import { env } from './env';
+import { CommentReaction } from '../entities/comment-reaction';
 import { Resume } from '../entities/resume';
 import { ResumeComment } from '../entities/resume-comment';
 import { ResumeRating } from '../entities/resume-rating';
@@ -9,6 +10,7 @@ import { CreateResumeFeed1789130000000 } from '../migrations/1789130000000-Creat
 import { AddResumeCaption1789140000000 } from '../migrations/1789140000000-AddResumeCaption';
 import { ReplaceReactionKinds1789150000000 } from '../migrations/1789150000000-ReplaceReactionKinds';
 import { AddCommentThreads1789160000000 } from '../migrations/1789160000000-AddCommentThreads';
+import { AddCommentReactions1789170000000 } from '../migrations/1789170000000-AddCommentReactions';
 
 /**
  * TypeORM connection to your Supabase Postgres.
@@ -23,12 +25,13 @@ export const AppDataSource = new DataSource({
   synchronize: env.dbSynchronize,
   logging: env.dbLogging,
   ssl: env.dbSsl ? { rejectUnauthorized: false } : false,
-  entities: [Resume, ResumeComment, ResumeRating, ResumeReaction],
+  entities: [Resume, ResumeComment, ResumeRating, ResumeReaction, CommentReaction],
   migrations: [
     CreateResumeFeed1789130000000,
     AddResumeCaption1789140000000,
     ReplaceReactionKinds1789150000000,
     AddCommentThreads1789160000000,
+    AddCommentReactions1789170000000,
   ],
   migrationsRun: env.dbMigrationsRun,
   subscribers: [],

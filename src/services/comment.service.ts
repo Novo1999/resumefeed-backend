@@ -1,12 +1,16 @@
 import { AppDataSource } from '../config/data-source';
+import { In } from 'typeorm';
 import { Resume } from '../entities/resume';
 import { ResumeComment } from '../entities/resume-comment';
+import { CommentReaction } from '../entities/comment-reaction';
 import { assertUuid, encodeCursor, microsecondTimestamp, parseCursor } from './cursor';
 import { loadPublicProfiles, unknownProfile } from './profile.service';
 import { ServiceError } from './service-error';
+import { emptyReactionCounts } from './resume.service';
 import { COMMENT_BODY_MAX_LENGTH } from '../types/comment';
-import type { PublicProfile } from '../types/resume';
+import type { PublicProfile, ReactionCounts, ReactionKind } from '../types/resume';
 import type {
+  CommentReactionResponse,
   CommentRepliesResponse,
   CommentResponse,
   CommentThread,
@@ -53,6 +57,49 @@ export function parseCommentBody(body: unknown): WriteCommentRequest {
   return { body: trimmed };
 }
 
+type ReactionContext = {
+  counts: Map<string, ReactionCounts>;
+  viewer: Map<string, ReactionKind>;
+};
+
+function emptyReactionContext(): ReactionContext {
+  return { counts: new Map(), viewer: new Map() };
+}
+
+/**
+ * Per-kind tallies plus the viewer's own pick, for a whole page of comments in
+ * two queries rather than two per comment.
+ */
+async function loadCommentReactions(
+  commentIds: string[],
+  viewerId: string,
+): Promise<ReactionContext> {
+  const context = emptyReactionContext();
+  if (commentIds.length === 0) return context;
+
+  const repository = AppDataSource.getRepository(CommentReaction);
+  const [rows, mine] = await Promise.all([
+    repository
+      .createQueryBuilder('reaction')
+      .select('reaction.comment_id', 'commentId')
+      .addSelect('reaction.kind', 'kind')
+      .addSelect('count(*)::integer', 'total')
+      .where('reaction.comment_id IN (:...commentIds)', { commentIds })
+      .groupBy('reaction.comment_id')
+      .addGroupBy('reaction.kind')
+      .getRawMany<{ commentId: string; kind: ReactionKind; total: number }>(),
+    repository.findBy({ authorId: viewerId, commentId: In(commentIds) }),
+  ]);
+
+  for (const row of rows) {
+    const counts = context.counts.get(row.commentId) ?? emptyReactionCounts();
+    counts[row.kind] = row.total;
+    context.counts.set(row.commentId, counts);
+  }
+  for (const reaction of mine) context.viewer.set(reaction.commentId, reaction.kind);
+  return context;
+}
+
 /**
  * A tombstone keeps its replies but gives up its body and its author, so
  * deleting is never a way to have said something anonymously.
@@ -60,6 +107,7 @@ export function parseCommentBody(body: unknown): WriteCommentRequest {
 function serializeComment(
   comment: ResumeComment,
   profiles: Map<string, PublicProfile>,
+  reactions: ReactionContext,
   viewerId: string,
   resumeOwnerId: string,
 ): CommentResponse {
@@ -79,6 +127,9 @@ function serializeComment(
     replyCount: comment.replyCount,
     editedAt: comment.editedAt?.toISOString() ?? null,
     createdAt: comment.createdAt.toISOString(),
+    reactionCount: comment.reactionCount,
+    reactionCounts: reactions.counts.get(comment.id) ?? emptyReactionCounts(),
+    viewerReaction: reactions.viewer.get(comment.id) ?? null,
     viewerCanEdit: !deleted && isAuthor,
     viewerCanDelete: !deleted && (isAuthor || resumeOwnerId === viewerId),
   };
@@ -129,7 +180,7 @@ export async function createComment(
   );
 
   const profiles = await loadPublicProfiles([viewerId]);
-  return serializeComment(created, profiles, viewerId, resume.ownerId);
+  return serializeComment(created, profiles, emptyReactionContext(), viewerId, resume.ownerId);
 }
 
 /**
@@ -163,7 +214,7 @@ export async function createReply(
   );
 
   const profiles = await loadPublicProfiles(profileIds([created]));
-  return serializeComment(created, profiles, viewerId, resume.ownerId);
+  return serializeComment(created, profiles, emptyReactionContext(), viewerId, resume.ownerId);
 }
 
 export async function updateComment(
@@ -188,8 +239,11 @@ export async function updateComment(
   const saved = await AppDataSource.getRepository(ResumeComment).save(comment);
 
   const resume = await findResumeOrFail(comment.resumeId);
-  const profiles = await loadPublicProfiles(profileIds([saved]));
-  return serializeComment(saved, profiles, viewerId, resume.ownerId);
+  const [profiles, reactions] = await Promise.all([
+    loadPublicProfiles(profileIds([saved])),
+    loadCommentReactions([saved.id], viewerId),
+  ]);
+  return serializeComment(saved, profiles, reactions, viewerId, resume.ownerId);
 }
 
 /**
@@ -257,12 +311,19 @@ export async function getCommentThreads(
 
   const previews = await loadReplyPreviews(roots.map((root) => root.id));
   const previewed = [...previews.values()].flat();
-  const profiles = await loadPublicProfiles(profileIds([...roots, ...previewed]));
+  const onPage = [...roots, ...previewed];
+  const [profiles, reactions] = await Promise.all([
+    loadPublicProfiles(profileIds(onPage)),
+    loadCommentReactions(
+      onPage.map((comment) => comment.id),
+      viewerId,
+    ),
+  ]);
 
   const items: CommentThread[] = roots.map((root) => ({
-    ...serializeComment(root, profiles, viewerId, resume.ownerId),
+    ...serializeComment(root, profiles, reactions, viewerId, resume.ownerId),
     replies: (previews.get(root.id) ?? []).map((reply) =>
-      serializeComment(reply, profiles, viewerId, resume.ownerId),
+      serializeComment(reply, profiles, reactions, viewerId, resume.ownerId),
     ),
   }));
   return { items, nextCursor };
@@ -276,6 +337,7 @@ type ReplyRow = {
   reply_to_author_id: string | null;
   body: string;
   reply_count: number;
+  reaction_count: number;
   edited_at: Date | null;
   deleted_at: Date | null;
   created_at: Date;
@@ -291,6 +353,7 @@ function toComment(row: ReplyRow): ResumeComment {
   comment.replyToAuthorId = row.reply_to_author_id;
   comment.body = row.body;
   comment.replyCount = row.reply_count;
+  comment.reactionCount = row.reaction_count;
   comment.editedAt = row.edited_at;
   comment.deletedAt = row.deleted_at;
   comment.createdAt = row.created_at;
@@ -309,7 +372,7 @@ async function loadReplyPreviews(rootIds: string[]): Promise<Map<string, ResumeC
 
   const rows: ReplyRow[] = await AppDataSource.query(
     `SELECT id, resume_id, author_id, parent_id, reply_to_author_id, body,
-            reply_count, edited_at, deleted_at, created_at, updated_at
+            reply_count, reaction_count, edited_at, deleted_at, created_at, updated_at
      FROM (
        SELECT *, row_number() OVER (
          PARTITION BY parent_id ORDER BY created_at ASC, id ASC
@@ -369,9 +432,53 @@ export async function getCommentReplies(
       ? encodeCursor({ createdAt: lastCursorValue, id: replies[replies.length - 1].id })
       : null;
 
-  const profiles = await loadPublicProfiles(profileIds(replies));
+  const [profiles, reactions] = await Promise.all([
+    loadPublicProfiles(profileIds(replies)),
+    loadCommentReactions(
+      replies.map((reply) => reply.id),
+      viewerId,
+    ),
+  ]);
   return {
-    items: replies.map((reply) => serializeComment(reply, profiles, viewerId, resume.ownerId)),
+    items: replies.map((reply) =>
+      serializeComment(reply, profiles, reactions, viewerId, resume.ownerId),
+    ),
     nextCursor,
+  };
+}
+
+/** Sets, replaces, or clears the caller's reaction on one comment. */
+export async function reactToComment(
+  commentId: string,
+  viewerId: string,
+  kind: ReactionKind | null,
+): Promise<CommentReactionResponse> {
+  assertDatabase();
+  const comment = await findCommentOrFail(commentId);
+  if (comment.deletedAt !== null) {
+    throw new ServiceError('That comment was deleted.', 'not_found');
+  }
+
+  const repository = AppDataSource.getRepository(CommentReaction);
+  if (kind === null) {
+    await repository.delete({ commentId: comment.id, authorId: viewerId });
+  } else {
+    await repository.upsert(
+      { commentId: comment.id, authorId: viewerId, kind },
+      { conflictPaths: ['commentId', 'authorId'] },
+    );
+  }
+
+  // The trigger owns the total, so read it back rather than recompute it here.
+  const [refreshed, reactions] = await Promise.all([
+    AppDataSource.getRepository(ResumeComment).findOneByOrFail({ id: comment.id }),
+    loadCommentReactions([comment.id], viewerId),
+  ]);
+
+  return {
+    commentId: comment.id,
+    viewerReaction: kind,
+    reactionCount: refreshed.reactionCount,
+    reactionCounts: reactions.counts.get(comment.id) ?? emptyReactionCounts(),
   };
 }

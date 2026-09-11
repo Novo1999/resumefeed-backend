@@ -67,6 +67,7 @@ Key files:
 | Resume create, feed, and PDF-read routes                      | Done — authenticated feed uses short-lived signed PDF URLs |
 | Rating and reaction routes                                    | Done — one per person per resume, upsert semantics         |
 | Comment routes — threads, replies, edit, delete               | Done — two-level threads, tombstones, owner moderation     |
+| Comment reactions                                             | Done — same five kinds, one per person per comment         |
 
 Key files:
 
@@ -98,10 +99,10 @@ The `/api` prefix, the bearer token and server-readable sessions are all closed 
    in `router.refresh()`. Anything reading metadata off the client session directly
    would show stale values.
 
-3. **The community interaction loop is built but unconsumed.** Rating, reaction,
-   and comment endpoints all exist; no frontend calls the comment ones yet, and
-   the comment response shapes are hand-written in `src/types/comment.ts` with no
-   mirror on the client, so they can drift the same way `MeResponse` can.
+3. **The community interaction loop is built end to end.** Rating, reaction, and
+   comment endpoints exist and the feed consumes all of them. The comment shapes
+   are hand-mirrored between `src/types/comment.ts` and the frontend
+   `types/comment.ts`, so they drift silently — change them together.
 
 ## Settled decisions
 
@@ -141,8 +142,10 @@ The `/api` prefix, the bearer token and server-readable sessions are all closed 
     tombstones it (`deleted_at` set, body blanked) so the replies survive; a
     comment nobody answered is deleted outright. Tombstones are excluded from
     `comment_count`.
-  - `resume_reactions` holds `helpful`, `insightful`, or `encouraging`; a person may
-    use each kind once per resume.
+  - `resume_reactions` holds one of five kinds; a person may hold one per resume.
+  - `comment_reactions` mirrors it for comments, sharing the same
+    `reaction_kind_enum` and the same one-per-person rule. `resume_comments.reaction_count`
+    is a trigger-maintained aggregate; per-kind tallies are grouped per page at read time.
   - `resumes.average_rating`, `rating_count`, `comment_count`, and `reaction_count`
     are feed-card aggregates. Database triggers maintain them on every child-row
     insert, update, and delete; an unrated resume has `average_rating = null`.
@@ -184,8 +187,9 @@ The `/api` prefix, the bearer token and server-readable sessions are all closed 
    verifies its ownership and MIME type before creating the resume record.
 4. ~~**Feed**~~ — `GET /api/resumes` lists newest posts with ten-minute signed
    URLs; the viewer renders page one and opens the full PDF on demand.
-5. ~~**Ratings, comments, and reactions**~~ — done on the backend: `PUT` rating and
-   reaction, and the full comment/thread routes. The comment UI is not built yet.
+5. ~~**Ratings, comments, and reactions**~~ — done. Rating and reaction on a resume,
+   two-level comment threads with replies, editing, deletion and per-comment
+   reactions, all wired into the feed card.
 
 ## Running it locally
 

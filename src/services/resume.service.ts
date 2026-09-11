@@ -314,7 +314,7 @@ export async function getResumeDocument(resumeId: string): Promise<ResumeDocumen
   return { url: await createPdfUrl(resume.storagePath), expiresIn: PDF_URL_TTL_SECONDS };
 }
 
-function emptyReactionCounts(): ReactionCounts {
+export function emptyReactionCounts(): ReactionCounts {
   return Object.fromEntries(REACTION_KINDS.map((kind) => [kind, 0])) as ReactionCounts;
 }
 

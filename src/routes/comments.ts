@@ -3,6 +3,7 @@ import {
   listCommentReplies,
   patchComment,
   postReply,
+  putCommentReaction,
   removeComment,
 } from '../controllers/comment.controller';
 import { requireAuth } from '../middleware/auth';
@@ -16,5 +17,6 @@ export const commentRouter = Router();
 
 commentRouter.get('/:commentId/replies', requireAuth, listCommentReplies);
 commentRouter.post('/:commentId/replies', requireAuth, postReply);
+commentRouter.put('/:commentId/reaction', requireAuth, putCommentReaction);
 commentRouter.patch('/:commentId', requireAuth, patchComment);
 commentRouter.delete('/:commentId', requireAuth, removeComment);

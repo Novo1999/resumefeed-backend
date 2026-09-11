@@ -1,4 +1,4 @@
-import type { PublicProfile } from './resume';
+import type { PublicProfile, ReactionCounts, ReactionKind } from './resume';
 
 export const COMMENT_BODY_MAX_LENGTH = 2000;
 
@@ -23,6 +23,10 @@ export type CommentResponse = {
   replyCount: number;
   editedAt: string | null;
   createdAt: string;
+  reactionCount: number;
+  reactionCounts: ReactionCounts;
+  /** The signed-in viewer's reaction on this comment, if they left one. */
+  viewerReaction: ReactionKind | null;
   viewerCanEdit: boolean;
   viewerCanDelete: boolean;
 };
@@ -43,4 +47,11 @@ export type CommentRepliesResponse = {
   items: CommentResponse[];
   /** Opaque cursor for the next newest page of replies, or null. */
   nextCursor: string | null;
+};
+
+export type CommentReactionResponse = {
+  commentId: string;
+  viewerReaction: ReactionKind | null;
+  reactionCount: number;
+  reactionCounts: ReactionCounts;
 };

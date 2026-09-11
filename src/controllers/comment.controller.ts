@@ -6,8 +6,10 @@ import {
   getCommentReplies,
   getCommentThreads,
   parseCommentBody,
+  reactToComment,
   updateComment,
 } from '../services/comment.service';
+import { parseResumeReaction } from '../services/resume.service';
 import { sendServiceError } from './service-error.controller';
 
 /** Pagination cursors arrive as a query string, which Express may hand back as an array. */
@@ -74,6 +76,15 @@ export async function removeComment(req: Request, res: Response) {
   try {
     await deleteComment(req.params.commentId, req.user!.id);
     res.status(204).end();
+  } catch (err) {
+    sendServiceError(err, res);
+  }
+}
+
+export async function putCommentReaction(req: Request, res: Response) {
+  try {
+    const { kind } = parseResumeReaction(req.body);
+    res.json(await reactToComment(req.params.commentId, req.user!.id, kind));
   } catch (err) {
     sendServiceError(err, res);
   }

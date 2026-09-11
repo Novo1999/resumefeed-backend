@@ -53,6 +53,6 @@ existing one rather than adding another.
 _Avoid_: Score, stars, vote
 
 **Reaction**:
-A one-tap response of a fixed kind. One per author per resume; picking a different
-kind replaces the previous one.
+A one-tap response of a fixed kind, left on either a resume or a comment. One per
+author per thing reacted to; picking a different kind replaces the previous one.
 _Avoid_: Emoji, like

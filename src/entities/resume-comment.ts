@@ -9,6 +9,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { CommentReaction } from './comment-reaction';
 import { Resume } from './resume';
 
 /**
@@ -49,6 +50,10 @@ export class ResumeComment {
   @Column({ name: 'reply_count', type: 'integer', default: 0 })
   replyCount!: number;
 
+  /** Reactions on this comment, maintained by a database trigger. */
+  @Column({ name: 'reaction_count', type: 'integer', default: 0 })
+  reactionCount!: number;
+
   /**
    * Set only when the author changes the body. `updatedAt` cannot carry this,
    * because the reply-count trigger bumps it on rows nobody edited.
@@ -79,4 +84,7 @@ export class ResumeComment {
 
   @OneToMany(() => ResumeComment, (comment) => comment.parent)
   replies!: ResumeComment[];
+
+  @OneToMany(() => CommentReaction, (reaction) => reaction.comment)
+  reactions!: CommentReaction[];
 }
