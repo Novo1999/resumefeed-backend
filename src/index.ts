@@ -1,6 +1,6 @@
 import 'reflect-metadata';
-import { AppDataSource } from './config/data-source';
 import app from './app';
+import { AppDataSource } from './config/data-source';
 import { env } from './config/env';
 
 async function bootstrap() {
