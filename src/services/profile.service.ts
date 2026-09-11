@@ -54,7 +54,8 @@ export function parseProfilePatch(body: unknown, userId: string): ParsedProfileP
     const value = input.avatarUrl;
     if (value === null) updates.avatar_url = null;
     else if (typeof value !== 'string') errors.avatarUrl = 'Avatar URL must be text or null.';
-    else if (!isOwnAvatarUrl(value, userId)) errors.avatarUrl = 'That avatar is not in your storage folder.';
+    else if (!isOwnAvatarUrl(value, userId))
+      errors.avatarUrl = 'That avatar is not in your storage folder.';
     else updates.avatar_url = value;
   }
 
@@ -62,7 +63,10 @@ export function parseProfilePatch(body: unknown, userId: string): ParsedProfileP
 }
 
 /** Merges the patch so unrelated Auth metadata cannot be accidentally erased. */
-export async function updateProfile(user: AuthUser, updates: Record<string, string | null>): Promise<AuthUser> {
+export async function updateProfile(
+  user: AuthUser,
+  updates: Record<string, string | null>,
+): Promise<AuthUser> {
   const { data, error } = await getSupabase().auth.admin.updateUserById(user.id, {
     user_metadata: { ...(user.user_metadata ?? {}), ...updates },
   });

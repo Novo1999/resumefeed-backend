@@ -23,9 +23,7 @@ function readBearerToken(req: Request): string | null {
   return token.length > 0 ? token : null;
 }
 
-type VerifyResult =
-  | { ok: true; user: AuthUser }
-  | { ok: false; status: number; message: string };
+type VerifyResult = { ok: true; user: AuthUser } | { ok: false; status: number; message: string };
 
 async function verifyToken(token: string): Promise<VerifyResult> {
   try {

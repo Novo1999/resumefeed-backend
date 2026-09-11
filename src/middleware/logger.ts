@@ -17,7 +17,8 @@ morgan.token('user', (req: Request) => req.user?.id ?? 'anon');
 const devFormat = ':method :url :status :response-time ms - :user';
 
 /** Apache combined, plus the user id — the field you actually search prod logs by. */
-const prodFormat = ':remote-addr - :remote-user [:date[clf]] ":method :url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent" :user';
+const prodFormat =
+  ':remote-addr - :remote-user [:date[clf]] ":method :url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent" :user';
 
 /** Uptime probes hit `/health` constantly; they drown out anything useful. */
 function skipHealthChecks(req: Request) {

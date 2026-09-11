@@ -39,7 +39,9 @@ function seedObjectName(index: number, batch: string): string {
 
 function assertBatch(batch: string): void {
   if (!/^[a-z0-9-]{1,40}$/.test(batch)) {
-    throw new Error('RESUME_SEED_BATCH must contain 1â€“40 lowercase letters, numbers, or hyphens.');
+    throw new Error(
+      'RESUME_SEED_BATCH must contain 1â€“40 lowercase letters, numbers, or hyphens.',
+    );
   }
 }
 
@@ -53,7 +55,9 @@ async function main() {
   const supabase = getSupabase();
   const { data: owner, error: ownerError } = await supabase.auth.admin.getUserById(ownerId);
   if (ownerError || !owner.user) {
-    throw new Error(`The seed owner does not exist in Supabase Auth: ${ownerError?.message ?? ownerId}`);
+    throw new Error(
+      `The seed owner does not exist in Supabase Auth: ${ownerError?.message ?? ownerId}`,
+    );
   }
 
   await AppDataSource.initialize();
@@ -74,7 +78,9 @@ async function main() {
       const localPath = join(resumeDirectory, originalFilename);
       const file = await readFile(localPath);
       if (file.byteLength > MAX_RESUME_BYTES) {
-        throw new Error(`${basename(localPath)} exceeds the ${MAX_RESUME_BYTES / 1024 / 1024} MiB bucket limit.`);
+        throw new Error(
+          `${basename(localPath)} exceeds the ${MAX_RESUME_BYTES / 1024 / 1024} MiB bucket limit.`,
+        );
       }
       if (file.subarray(0, 5).toString('ascii') !== '%PDF-') {
         throw new Error(`${basename(localPath)} is not a PDF file.`);

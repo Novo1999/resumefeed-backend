@@ -15,35 +15,36 @@ that community angle — people helping each other get hired through honest crit
 
 ## Repos at a glance
 
-| | `resumefeed-frontend` | `resumefeed-backend` |
-|---|---|---|
-| Stack | Next.js 16.3.4, React 19.2.8, TS 5, Tailwind v4 | Express 4, TypeORM 0.3, Postgres (`pg`) |
-| State / data | Redux Toolkit + RTK Query | TypeORM DataSource |
-| UI | shadcn (`base-nova`, neutral, RSC on) | — |
-| Auth | Supabase JS (browser, PKCE) | Supabase JS (service role) |
-| Storage | Supabase Storage (`resumes` bucket) | Supabase Storage (service role) |
-| Dev | `npm run dev` → :3000 | `npm run dev` (tsx watch) → :4000 |
-| Git | branch `master`, 3 commits | branch `main`, 2 commits |
+|              | `resumefeed-frontend`                           | `resumefeed-backend`                    |
+| ------------ | ----------------------------------------------- | --------------------------------------- |
+| Stack        | Next.js 16.3.4, React 19.2.8, TS 5, Tailwind v4 | Express 4, TypeORM 0.3, Postgres (`pg`) |
+| State / data | Redux Toolkit + RTK Query                       | TypeORM DataSource                      |
+| UI           | shadcn (`base-nova`, neutral, RSC on)           | —                                       |
+| Auth         | Supabase JS (browser, PKCE)                     | Supabase JS (service role)              |
+| Storage      | Supabase Storage (`resumes` bucket)             | Supabase Storage (service role)         |
+| Dev          | `npm run dev` → :3000                           | `npm run dev` (tsx watch) → :4000       |
+| Git          | branch `master`, 3 commits                      | branch `main`, 2 commits                |
 
 Auth and the account page are built. **No resume feature exists in either repo yet.**
 
 ## Frontend state
 
-| Piece | Status |
-|---|---|
-| Next.js + TS + Tailwind v4 config | Done |
-| Redux store, typed hooks, `Providers` in root layout | Done |
-| RTK Query `baseApi` at `${NEXT_PUBLIC_API_URL}/api`, bearer token attached | Done |
-| Dev-only RTK Query console logger | Done |
-| Supabase clients — browser, server (RSC), proxy | Done, cookie-based sessions |
-| Auth pages — `/login`, `/signup`, `/auth/callback`, server actions | Done |
-| Route gating + session refresh in `proxy.ts` | Done — `/account`, `/feed` |
-| Session-aware header with avatar + user menu | Done |
-| Account page — avatar upload, name edit, read-only email | Done |
-| Landing page (`/`) | create-next-app boilerplate |
-| Feed (`/feed`), resume upload | Empty state only / not started |
+| Piece                                                                      | Status                         |
+| -------------------------------------------------------------------------- | ------------------------------ |
+| Next.js + TS + Tailwind v4 config                                          | Done                           |
+| Redux store, typed hooks, `Providers` in root layout                       | Done                           |
+| RTK Query `baseApi` at `${NEXT_PUBLIC_API_URL}/api`, bearer token attached | Done                           |
+| Dev-only RTK Query console logger                                          | Done                           |
+| Supabase clients — browser, server (RSC), proxy                            | Done, cookie-based sessions    |
+| Auth pages — `/login`, `/signup`, `/auth/callback`, server actions         | Done                           |
+| Route gating + session refresh in `proxy.ts`                               | Done — `/account`, `/feed`     |
+| Session-aware header with avatar + user menu                               | Done                           |
+| Account page — avatar upload, name edit, read-only email                   | Done                           |
+| Landing page (`/`)                                                         | create-next-app boilerplate    |
+| Feed (`/feed`), resume upload                                              | Empty state only / not started |
 
 Key files:
+
 - `store/api/baseApi.ts` — RTK Query root; inject feature endpoints here
 - `store/api/profileApi.ts` — `GET`/`PATCH /api/me`
 - `lib/supabase/{client,server,proxy}.ts` — one client per execution context
@@ -54,19 +55,20 @@ Key files:
 
 ## Backend state
 
-| Piece | Status |
-|---|---|
-| Express app factory, CORS (credentials on), JSON body parsing | Done |
-| `GET /health` | Done |
-| Auth middleware — `requireAuth`, `optionalAuth` | Done, verifies Supabase JWT |
-| `GET /api/me`, `PATCH /api/me` | Done — profile read/update |
-| Storage buckets + RLS policies | Done — `supabase/storage-setup.sql` |
-| TypeORM DataSource against Supabase Postgres | Configured, connects lazily |
-| Entities + first migration | Done — Resume, rating, comment, and reaction model |
-| Resume create, feed, and PDF-read routes | Done — authenticated feed uses short-lived signed PDF URLs |
-| Review, rating, reaction routes | Not started |
+| Piece                                                         | Status                                                     |
+| ------------------------------------------------------------- | ---------------------------------------------------------- |
+| Express app factory, CORS (credentials on), JSON body parsing | Done                                                       |
+| `GET /health`                                                 | Done                                                       |
+| Auth middleware — `requireAuth`, `optionalAuth`               | Done, verifies Supabase JWT                                |
+| `GET /api/me`, `PATCH /api/me`                                | Done — profile read/update                                 |
+| Storage buckets + RLS policies                                | Done — `supabase/storage-setup.sql`                        |
+| TypeORM DataSource against Supabase Postgres                  | Configured, connects lazily                                |
+| Entities + first migration                                    | Done — Resume, rating, comment, and reaction model         |
+| Resume create, feed, and PDF-read routes                      | Done — authenticated feed uses short-lived signed PDF URLs |
+| Review, rating, reaction routes                               | Not started                                                |
 
 Key files:
+
 - `src/app.ts` — middleware + route mounting point
 - `src/routes/me.ts` — profile read/update; email is rejected, not ignored
 - `src/middleware/auth.ts` — token verification
@@ -102,13 +104,12 @@ The `/api` prefix, the bearer token and server-readable sessions are all closed 
 ## Settled decisions
 
 - **Storage: Supabase Storage.** Decided 2026-09-11, replacing the earlier
-  UploadThing note. Supabase is already the auth provider *and* the Postgres host,
+  UploadThing note. Supabase is already the auth provider _and_ the Postgres host,
   so this is one less vendor and one less key, and RLS can gate a resume file by the
   same user ID that owns its row.
 
   **Buckets created 2026-09-11** by `resumefeed-backend/supabase/storage-setup.sql`
   — run that whole file in the Supabase SQL editor. It is idempotent.
-
   - `avatars` — **public**, 2 MiB, PNG/JPEG/WebP. Profile pictures render on every
     feed card, so a signed URL per render would be waste, and a picture is not PII
     the way a resume is.
@@ -130,7 +131,6 @@ The `/api` prefix, the bearer token and server-readable sessions are all closed 
   the relative `storage_path` in the existing private `resumes` bucket — never a
   permanent object URL. Every path must remain `{owner_id}/{filename}.pdf` to meet
   the storage RLS policy.
-
   - `resume_ratings` holds a 1–5 score and has one row per `(resume_id, author_id)`;
     changing a score updates that same row.
   - `resume_comments` holds written feedback (up to 2,000 characters).

@@ -63,7 +63,8 @@ function serializeResume(resume: Resume): ResumeResponse {
 }
 
 function assertResumeId(resumeId: string): void {
-  if (!UUID_PATTERN.test(resumeId)) throw new ResumeServiceError('Invalid resume ID.', 'bad_request');
+  if (!UUID_PATTERN.test(resumeId))
+    throw new ResumeServiceError('Invalid resume ID.', 'bad_request');
 }
 
 function encodeFeedCursor(cursor: FeedCursor): string {
@@ -119,7 +120,8 @@ export function parseResumeCreate(body: unknown, userId: string): ParsedResumeCr
     }
   }
 
-  if (typeof originalFilename !== 'string') errors.originalFilename = 'Original filename is required.';
+  if (typeof originalFilename !== 'string')
+    errors.originalFilename = 'Original filename is required.';
   else if (
     originalFilename.trim().length === 0 ||
     originalFilename.length > FILENAME_MAX_LENGTH ||
@@ -133,7 +135,8 @@ export function parseResumeCreate(body: unknown, userId: string): ParsedResumeCr
     if (typeof title !== 'string') errors.title = 'Title must be text.';
     else {
       const trimmed = title.trim();
-      if (trimmed.length > TITLE_MAX_LENGTH) errors.title = `Title must be ${TITLE_MAX_LENGTH} characters or fewer.`;
+      if (trimmed.length > TITLE_MAX_LENGTH)
+        errors.title = `Title must be ${TITLE_MAX_LENGTH} characters or fewer.`;
       else parsedTitle = trimmed || null;
     }
   }
@@ -143,22 +146,36 @@ export function parseResumeCreate(body: unknown, userId: string): ParsedResumeCr
     if (typeof caption !== 'string') errors.caption = 'Caption must be text.';
     else {
       const trimmed = caption.trim();
-      if (trimmed.length > CAPTION_MAX_LENGTH) errors.caption = `Caption must be ${CAPTION_MAX_LENGTH} characters or fewer.`;
+      if (trimmed.length > CAPTION_MAX_LENGTH)
+        errors.caption = `Caption must be ${CAPTION_MAX_LENGTH} characters or fewer.`;
       else parsedCaption = trimmed || null;
     }
   }
 
-  if (Object.keys(errors).length > 0 || typeof storagePath !== 'string' || typeof originalFilename !== 'string') {
+  if (
+    Object.keys(errors).length > 0 ||
+    typeof storagePath !== 'string' ||
+    typeof originalFilename !== 'string'
+  ) {
     return { values: null, errors };
   }
   return {
-    values: { storagePath, originalFilename: originalFilename.trim(), title: parsedTitle, caption: parsedCaption },
+    values: {
+      storagePath,
+      originalFilename: originalFilename.trim(),
+      title: parsedTitle,
+      caption: parsedCaption,
+    },
     errors,
   };
 }
 
 export function parseResumeRating(body: unknown): RateResumeRequest {
-  if (typeof body !== 'object' || body === null || !Number.isInteger((body as { score?: unknown }).score)) {
+  if (
+    typeof body !== 'object' ||
+    body === null ||
+    !Number.isInteger((body as { score?: unknown }).score)
+  ) {
     throw new ResumeServiceError('Rating score must be a whole number from 1 to 5.', 'bad_request');
   }
 
@@ -172,8 +189,7 @@ export function parseResumeRating(body: unknown): RateResumeRequest {
 async function hasUploadedPdf(userId: string, storagePath: string): Promise<boolean> {
   const objectName = storagePath.slice(userId.length + 1);
   const { data, error } = await getSupabase()
-    .storage
-    .from(env.supabaseResumeBucket)
+    .storage.from(env.supabaseResumeBucket)
     .list(userId, { limit: 1, search: objectName });
   if (error) throw new ResumeServiceError(error.message, 'dependency');
   return data?.find((item) => item.name === objectName)?.metadata?.mimetype === 'application/pdf';
@@ -201,16 +217,21 @@ async function loadAuthors(ownerIds: string[]): Promise<Map<string, ResumeAuthor
 
 async function createPdfUrl(storagePath: string): Promise<string> {
   const { data, error } = await getSupabase()
-    .storage
-    .from(env.supabaseResumeBucket)
+    .storage.from(env.supabaseResumeBucket)
     .createSignedUrl(storagePath, PDF_URL_TTL_SECONDS);
   if (error || !data?.signedUrl) {
-    throw new ResumeServiceError(error?.message ?? 'Could not create a PDF viewing link.', 'dependency');
+    throw new ResumeServiceError(
+      error?.message ?? 'Could not create a PDF viewing link.',
+      'dependency',
+    );
   }
   return data.signedUrl;
 }
 
-export async function createResume(userId: string, values: CreateResumeRequest): Promise<ResumeResponse> {
+export async function createResume(
+  userId: string,
+  values: CreateResumeRequest,
+): Promise<ResumeResponse> {
   assertDatabase();
   if (!(await hasUploadedPdf(userId, values.storagePath))) {
     throw new ResumeServiceError(
@@ -271,7 +292,10 @@ export async function rateResume(
   };
 }
 
-export async function getResumeFeed(cursor: string | undefined, viewerId: string): Promise<ResumeFeedResponse> {
+export async function getResumeFeed(
+  cursor: string | undefined,
+  viewerId: string,
+): Promise<ResumeFeedResponse> {
   assertDatabase();
   const parsedCursor = parseFeedCursor(cursor);
   const query = AppDataSource.getRepository(Resume)
@@ -306,14 +330,20 @@ export async function getResumeFeed(cursor: string | undefined, viewerId: string
     authorId: viewerId,
     resumeId: In(resumes.map((resume) => resume.id)),
   });
-  const viewerRatingByResumeId = new Map(viewerRatings.map((rating) => [rating.resumeId, rating.score]));
+  const viewerRatingByResumeId = new Map(
+    viewerRatings.map((rating) => [rating.resumeId, rating.score]),
+  );
   const items: FeedResumeResponse[] = await Promise.all(
     resumes.map(async (resume) => ({
       id: resume.id,
       title: resume.title,
       caption: resume.caption,
       originalFilename: resume.originalFilename,
-      author: authors.get(resume.ownerId) ?? { id: resume.ownerId, fullName: null, avatarUrl: null },
+      author: authors.get(resume.ownerId) ?? {
+        id: resume.ownerId,
+        fullName: null,
+        avatarUrl: null,
+      },
       pdfUrl: await createPdfUrl(resume.storagePath),
       ratingCount: resume.ratingCount,
       averageRating: resume.averageRating,

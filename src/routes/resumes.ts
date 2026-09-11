@@ -1,5 +1,10 @@
 import { Router } from 'express';
-import { getResumePdf, listResumes, postResume, putResumeRating } from '../controllers/resume.controller';
+import {
+  getResumePdf,
+  listResumes,
+  postResume,
+  putResumeRating,
+} from '../controllers/resume.controller';
 import { requireAuth } from '../middleware/auth';
 
 /** Route modules only declare the URL and middleware chain. */

@@ -45,12 +45,12 @@ New backend work must follow this convention.
 
 ## Scripts
 
-| Script              | Description                 |
-| ------------------- | --------------------------- |
-| `npm run dev`       | Dev server with watch (tsx) |
-| `npm run build`     | Compile to `dist/`          |
-| `npm start`         | Run compiled server         |
-| `npm run typecheck` | Type-check only             |
+| Script                 | Description                                      |
+| ---------------------- | ------------------------------------------------ |
+| `npm run dev`          | Dev server with watch (tsx)                      |
+| `npm run build`        | Compile to `dist/`                               |
+| `npm start`            | Run compiled server                              |
+| `npm run typecheck`    | Type-check only                                  |
 | `npm run seed:resumes` | Upload and create the provided resume feed posts |
 
 Pending migrations run at startup by default (`DB_MIGRATIONS_RUN=true`). Keep

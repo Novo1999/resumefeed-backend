@@ -38,7 +38,9 @@ export type ResumeRatingResponse = {
   averageRating: number | null;
 };
 
-export type ResumeFieldErrors = Partial<Record<'storagePath' | 'originalFilename' | 'title' | 'caption', string>>;
+export type ResumeFieldErrors = Partial<
+  Record<'storagePath' | 'originalFilename' | 'title' | 'caption', string>
+>;
 
 export type ParsedResumeCreate = {
   values: CreateResumeRequest | null;
