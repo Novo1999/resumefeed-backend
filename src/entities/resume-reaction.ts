@@ -8,8 +8,8 @@ import {
   PrimaryGeneratedColumn,
   Unique,
 } from 'typeorm';
-import { REACTION_KINDS, type ReactionKind } from './feed-types';
 import { Resume } from './resume';
+import { REACTION_KINDS, type ReactionKind } from '../types/resume';
 
 /** A person may leave one of each reaction kind on a resume. */
 @Entity({ name: 'resume_reactions' })

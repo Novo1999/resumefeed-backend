@@ -63,7 +63,8 @@ Key files:
 | Storage buckets + RLS policies | Done — `supabase/storage-setup.sql` |
 | TypeORM DataSource against Supabase Postgres | Configured, connects lazily |
 | Entities + first migration | Done — Resume, rating, comment, and reaction model |
-| Resume, review, rating routes | Not started |
+| Resume create route | Done — `POST /api/resumes` validates an uploaded PDF and creates its post |
+| Feed, PDF-read, review, rating, reaction routes | Not started |
 
 Key files:
 - `src/app.ts` — middleware + route mounting point
@@ -94,8 +95,9 @@ The `/api` prefix, the bearer token and server-readable sessions are all closed 
    in `router.refresh()`. Anything reading metadata off the client session directly
    would show stale values.
 
-3. **Nothing writes to the `resumes` bucket yet.** The bucket and its policies
-   exist; the upload UI and the signed-URL endpoint do not.
+3. **Resume reads are not exposed yet.** The upload/create flow writes a PDF to the
+   caller's `resumes/{user_id}/` folder and creates its row, but the feed list and
+   signed-URL endpoint for rendering a PDF are still to come.
 
 ## Settled decisions
 
@@ -162,10 +164,9 @@ The `/api` prefix, the bearer token and server-readable sessions are all closed 
 1. ~~**Domain model**~~ — Resume, rating, comment, and reaction entities plus the
    first migration are complete.
 2. **Landing page** — the marketing pitch; first thing anyone sees.
-3. **Upload** — a PDF into `resumes/{user_id}/`, plus the resume record. The avatar
-   path in `lib/storage/avatars.ts` is the template; resumes differ only in that
-   reads need a signed URL from the API.
-4. **Feed** — list resumes, `GET /api/resumes`.
+3. ~~**Upload**~~ — the frontend uploads a PDF into `resumes/{user_id}/`; the API
+   verifies its ownership and MIME type before creating the resume record.
+4. **Feed** — list resumes and issue a short-lived PDF URL, `GET /api/resumes`.
 5. **Ratings and reviews** — the actual community loop.
 
 ## Running it locally

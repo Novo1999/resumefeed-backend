@@ -11,7 +11,7 @@ import {
 import { ResumeComment } from './resume-comment';
 import { ResumeRating } from './resume-rating';
 import { ResumeReaction } from './resume-reaction';
-import { nullableNumericTransformer } from './feed-types';
+import { nullableNumericTransformer } from './transformers';
 
 /**
  * A post in the feed. The actual document remains a private object in Supabase

@@ -5,10 +5,19 @@ export class CreateResumeFeed1789130000000 implements MigrationInterface {
   name = 'CreateResumeFeed1789130000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`CREATE TYPE "public"."reaction_kind_enum" AS ENUM ('helpful', 'insightful', 'encouraging')`);
+    // `synchronize` was enabled while this feature was first developed. These
+    // guards let this migration adopt that schema and record itself once, while
+    // remaining a normal first-run migration for a clean database.
+    await queryRunner.query(`
+      DO $$ BEGIN
+        CREATE TYPE "public"."reaction_kind_enum" AS ENUM ('helpful', 'insightful', 'encouraging');
+      EXCEPTION
+        WHEN duplicate_object THEN NULL;
+      END $$
+    `);
 
     await queryRunner.query(`
-      CREATE TABLE "resumes" (
+      CREATE TABLE IF NOT EXISTS "resumes" (
         "id" uuid NOT NULL DEFAULT gen_random_uuid(),
         "owner_id" uuid NOT NULL,
         "storage_path" character varying(512) NOT NULL,
@@ -29,11 +38,11 @@ export class CreateResumeFeed1789130000000 implements MigrationInterface {
         CONSTRAINT "CHK_resumes_reaction_count" CHECK ("reaction_count" >= 0)
       )
     `);
-    await queryRunner.query(`CREATE INDEX "IDX_resumes_owner_created_at" ON "resumes" ("owner_id", "created_at")`);
-    await queryRunner.query(`CREATE INDEX "IDX_resumes_feed_created_at" ON "resumes" ("created_at")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_resumes_owner_created_at" ON "resumes" ("owner_id", "created_at")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_resumes_feed_created_at" ON "resumes" ("created_at")`);
 
     await queryRunner.query(`
-      CREATE TABLE "resume_ratings" (
+      CREATE TABLE IF NOT EXISTS "resume_ratings" (
         "id" uuid NOT NULL DEFAULT gen_random_uuid(),
         "resume_id" uuid NOT NULL,
         "author_id" uuid NOT NULL,
@@ -46,10 +55,10 @@ export class CreateResumeFeed1789130000000 implements MigrationInterface {
         CONSTRAINT "FK_resume_ratings_resume" FOREIGN KEY ("resume_id") REFERENCES "resumes"("id") ON DELETE CASCADE
       )
     `);
-    await queryRunner.query(`CREATE INDEX "IDX_resume_ratings_resume_id" ON "resume_ratings" ("resume_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_resume_ratings_resume_id" ON "resume_ratings" ("resume_id")`);
 
     await queryRunner.query(`
-      CREATE TABLE "resume_comments" (
+      CREATE TABLE IF NOT EXISTS "resume_comments" (
         "id" uuid NOT NULL DEFAULT gen_random_uuid(),
         "resume_id" uuid NOT NULL,
         "author_id" uuid NOT NULL,
@@ -60,11 +69,11 @@ export class CreateResumeFeed1789130000000 implements MigrationInterface {
         CONSTRAINT "FK_resume_comments_resume" FOREIGN KEY ("resume_id") REFERENCES "resumes"("id") ON DELETE CASCADE
       )
     `);
-    await queryRunner.query(`CREATE INDEX "IDX_resume_comments_resume_created_at" ON "resume_comments" ("resume_id", "created_at")`);
-    await queryRunner.query(`CREATE INDEX "IDX_resume_comments_author_id" ON "resume_comments" ("author_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_resume_comments_resume_created_at" ON "resume_comments" ("resume_id", "created_at")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_resume_comments_author_id" ON "resume_comments" ("author_id")`);
 
     await queryRunner.query(`
-      CREATE TABLE "resume_reactions" (
+      CREATE TABLE IF NOT EXISTS "resume_reactions" (
         "id" uuid NOT NULL DEFAULT gen_random_uuid(),
         "resume_id" uuid NOT NULL,
         "author_id" uuid NOT NULL,
@@ -75,11 +84,11 @@ export class CreateResumeFeed1789130000000 implements MigrationInterface {
         CONSTRAINT "FK_resume_reactions_resume" FOREIGN KEY ("resume_id") REFERENCES "resumes"("id") ON DELETE CASCADE
       )
     `);
-    await queryRunner.query(`CREATE INDEX "IDX_resume_reactions_resume_id" ON "resume_reactions" ("resume_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_resume_reactions_resume_id" ON "resume_reactions" ("resume_id")`);
 
     // Keep feed-card totals correct even if writes are made outside a future API.
     await queryRunner.query(`
-      CREATE FUNCTION "touch_resume_updated_at"() RETURNS trigger AS $$
+      CREATE OR REPLACE FUNCTION "touch_resume_updated_at"() RETURNS trigger AS $$
       BEGIN
         NEW.updated_at = now();
         RETURN NEW;
@@ -87,7 +96,7 @@ export class CreateResumeFeed1789130000000 implements MigrationInterface {
       $$ LANGUAGE plpgsql
     `);
     await queryRunner.query(`
-      CREATE FUNCTION "refresh_resume_rating_stats"(target_resume_id uuid) RETURNS void AS $$
+      CREATE OR REPLACE FUNCTION "refresh_resume_rating_stats"(target_resume_id uuid) RETURNS void AS $$
       BEGIN
         UPDATE resumes
         SET rating_count = (SELECT count(*)::integer FROM resume_ratings WHERE resume_id = target_resume_id),
@@ -98,7 +107,7 @@ export class CreateResumeFeed1789130000000 implements MigrationInterface {
       $$ LANGUAGE plpgsql
     `);
     await queryRunner.query(`
-      CREATE FUNCTION "sync_resume_rating_stats"() RETURNS trigger AS $$
+      CREATE OR REPLACE FUNCTION "sync_resume_rating_stats"() RETURNS trigger AS $$
       BEGIN
         IF TG_OP = 'DELETE' THEN
           PERFORM refresh_resume_rating_stats(OLD.resume_id);
@@ -113,7 +122,7 @@ export class CreateResumeFeed1789130000000 implements MigrationInterface {
       $$ LANGUAGE plpgsql
     `);
     await queryRunner.query(`
-      CREATE FUNCTION "refresh_resume_comment_count"(target_resume_id uuid) RETURNS void AS $$
+      CREATE OR REPLACE FUNCTION "refresh_resume_comment_count"(target_resume_id uuid) RETURNS void AS $$
       BEGIN
         UPDATE resumes
         SET comment_count = (SELECT count(*)::integer FROM resume_comments WHERE resume_id = target_resume_id),
@@ -123,7 +132,7 @@ export class CreateResumeFeed1789130000000 implements MigrationInterface {
       $$ LANGUAGE plpgsql
     `);
     await queryRunner.query(`
-      CREATE FUNCTION "sync_resume_comment_count"() RETURNS trigger AS $$
+      CREATE OR REPLACE FUNCTION "sync_resume_comment_count"() RETURNS trigger AS $$
       BEGIN
         IF TG_OP = 'DELETE' THEN
           PERFORM refresh_resume_comment_count(OLD.resume_id);
@@ -138,7 +147,7 @@ export class CreateResumeFeed1789130000000 implements MigrationInterface {
       $$ LANGUAGE plpgsql
     `);
     await queryRunner.query(`
-      CREATE FUNCTION "refresh_resume_reaction_count"(target_resume_id uuid) RETURNS void AS $$
+      CREATE OR REPLACE FUNCTION "refresh_resume_reaction_count"(target_resume_id uuid) RETURNS void AS $$
       BEGIN
         UPDATE resumes
         SET reaction_count = (SELECT count(*)::integer FROM resume_reactions WHERE resume_id = target_resume_id),
@@ -148,7 +157,7 @@ export class CreateResumeFeed1789130000000 implements MigrationInterface {
       $$ LANGUAGE plpgsql
     `);
     await queryRunner.query(`
-      CREATE FUNCTION "sync_resume_reaction_count"() RETURNS trigger AS $$
+      CREATE OR REPLACE FUNCTION "sync_resume_reaction_count"() RETURNS trigger AS $$
       BEGIN
         IF TG_OP = 'DELETE' THEN
           PERFORM refresh_resume_reaction_count(OLD.resume_id);
@@ -163,6 +172,12 @@ export class CreateResumeFeed1789130000000 implements MigrationInterface {
       $$ LANGUAGE plpgsql
     `);
 
+    await queryRunner.query(`DROP TRIGGER IF EXISTS "TRG_resumes_touch_updated_at" ON "resumes"`);
+    await queryRunner.query(`DROP TRIGGER IF EXISTS "TRG_resume_ratings_touch_updated_at" ON "resume_ratings"`);
+    await queryRunner.query(`DROP TRIGGER IF EXISTS "TRG_resume_comments_touch_updated_at" ON "resume_comments"`);
+    await queryRunner.query(`DROP TRIGGER IF EXISTS "TRG_resume_ratings_stats" ON "resume_ratings"`);
+    await queryRunner.query(`DROP TRIGGER IF EXISTS "TRG_resume_comments_count" ON "resume_comments"`);
+    await queryRunner.query(`DROP TRIGGER IF EXISTS "TRG_resume_reactions_count" ON "resume_reactions"`);
     await queryRunner.query(`CREATE TRIGGER "TRG_resumes_touch_updated_at" BEFORE UPDATE ON "resumes" FOR EACH ROW EXECUTE FUNCTION "touch_resume_updated_at"()`);
     await queryRunner.query(`CREATE TRIGGER "TRG_resume_ratings_touch_updated_at" BEFORE UPDATE ON "resume_ratings" FOR EACH ROW EXECUTE FUNCTION "touch_resume_updated_at"()`);
     await queryRunner.query(`CREATE TRIGGER "TRG_resume_comments_touch_updated_at" BEFORE UPDATE ON "resume_comments" FOR EACH ROW EXECUTE FUNCTION "touch_resume_updated_at"()`);
