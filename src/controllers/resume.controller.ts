@@ -35,9 +35,15 @@ export async function postResume(req: Request, res: Response) {
   }
 }
 
-export async function listResumes(_req: Request, res: Response) {
+export async function listResumes(req: Request, res: Response) {
+  const cursor = req.query.cursor;
+  if (cursor !== undefined && typeof cursor !== 'string') {
+    res.status(400).json({ error: 'Feed cursor must be a single string.' });
+    return;
+  }
+
   try {
-    res.json(await getResumeFeed());
+    res.json(await getResumeFeed(cursor));
   } catch (err) {
     sendResumeError(err, res);
   }

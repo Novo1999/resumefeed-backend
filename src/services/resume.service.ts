@@ -16,8 +16,14 @@ import type {
 
 const TITLE_MAX_LENGTH = 120;
 const FILENAME_MAX_LENGTH = 255;
-const FEED_PAGE_SIZE = 20;
+const FEED_PAGE_SIZE = 10;
 const PDF_URL_TTL_SECONDS = 10 * 60;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+type FeedCursor = {
+  createdAt: string;
+  id: string;
+};
 
 export class ResumeServiceError extends Error {
   constructor(
@@ -48,6 +54,32 @@ function serializeResume(resume: Resume): ResumeResponse {
     reactionCount: resume.reactionCount,
     createdAt: resume.createdAt.toISOString(),
   };
+}
+
+function encodeFeedCursor(cursor: FeedCursor): string {
+  return Buffer.from(JSON.stringify(cursor)).toString('base64url');
+}
+
+function parseFeedCursor(cursor: string | undefined): FeedCursor | null {
+  if (!cursor) return null;
+  if (cursor.length > 512) throw new ResumeServiceError('Invalid feed cursor.', 'bad_request');
+
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      typeof (parsed as FeedCursor).createdAt !== 'string' ||
+      Number.isNaN(Date.parse((parsed as FeedCursor).createdAt)) ||
+      typeof (parsed as FeedCursor).id !== 'string' ||
+      !UUID_PATTERN.test((parsed as FeedCursor).id)
+    ) {
+      throw new Error('Malformed cursor');
+    }
+    return parsed as FeedCursor;
+  } catch {
+    throw new ResumeServiceError('Invalid feed cursor.', 'bad_request');
+  }
 }
 
 export function parseResumeCreate(body: unknown, userId: string): ParsedResumeCreate {
@@ -172,12 +204,36 @@ export async function createResume(userId: string, values: CreateResumeRequest):
   }
 }
 
-export async function getResumeFeed(): Promise<ResumeFeedResponse> {
+export async function getResumeFeed(cursor?: string): Promise<ResumeFeedResponse> {
   assertDatabase();
-  const resumes = await AppDataSource.getRepository(Resume).find({
-    order: { createdAt: 'DESC', id: 'DESC' },
-    take: FEED_PAGE_SIZE,
-  });
+  const parsedCursor = parseFeedCursor(cursor);
+  const query = AppDataSource.getRepository(Resume)
+    .createQueryBuilder('resume')
+    // Keep the database's microsecond timestamp intact for the next cursor.
+    .addSelect(
+      `to_char(resume.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+      'feed_cursor_created_at',
+    )
+    .orderBy('resume.created_at', 'DESC')
+    .addOrderBy('resume.id', 'DESC')
+    .take(FEED_PAGE_SIZE + 1);
+
+  if (parsedCursor) {
+    query.where(
+      '(resume.created_at, resume.id) < (:createdAt::timestamptz, :id::uuid)',
+      parsedCursor,
+    );
+  }
+
+  const { entities: fetchedResumes, raw } = await query.getRawAndEntities();
+  const resumes = fetchedResumes.slice(0, FEED_PAGE_SIZE);
+  const hasNextPage = fetchedResumes.length > FEED_PAGE_SIZE;
+  const lastCursorValue = raw[resumes.length - 1]?.feed_cursor_created_at;
+  const nextCursor =
+    hasNextPage && resumes.length > 0 && typeof lastCursorValue === 'string'
+      ? encodeFeedCursor({ createdAt: lastCursorValue, id: resumes[resumes.length - 1].id })
+      : null;
+
   const authors = await loadAuthors(resumes.map((resume) => resume.ownerId));
   const items: FeedResumeResponse[] = await Promise.all(
     resumes.map(async (resume) => ({
@@ -193,7 +249,7 @@ export async function getResumeFeed(): Promise<ResumeFeedResponse> {
       createdAt: resume.createdAt.toISOString(),
     })),
   );
-  return { items };
+  return { items, nextCursor };
 }
 
 export async function getResumeDocument(resumeId: string): Promise<ResumeDocumentResponse> {

@@ -51,6 +51,23 @@ New backend work must follow this convention.
 | `npm run build`     | Compile to `dist/`          |
 | `npm start`         | Run compiled server         |
 | `npm run typecheck` | Type-check only             |
+| `npm run seed:resumes` | Upload and create the provided resume feed posts |
 
 Pending migrations run at startup by default (`DB_MIGRATIONS_RUN=true`). Keep
 `DB_SYNCHRONIZE=false`; only enable synchronization for a disposable local database.
+
+## Seed the provided resumes
+
+The seed uploads the ten approved Novodip PDFs from `E:\\CV` to the private
+`resumes` bucket, then creates their feed rows. It deliberately excludes
+`chaiti_cv.pdf`. It is safe to run again: a post with the same seed storage path
+is skipped.
+
+```powershell
+$env:RESUME_SEED_OWNER_ID = 'your-supabase-auth-user-uuid'
+npm run seed:resumes
+```
+
+Set `RESUME_SEED_DIRECTORY` if the PDF folder is not `E:\\CV`.
+Set `RESUME_SEED_BATCH` (for example, `load-more-test`) to add a separate,
+clearly labeled 10-post test batch from the same approved PDFs.

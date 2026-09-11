@@ -61,6 +61,8 @@ export type FeedResumeResponse = {
 
 export type ResumeFeedResponse = {
   items: FeedResumeResponse[];
+  /** Opaque cursor for the next oldest page, or null when the feed is exhausted. */
+  nextCursor: string | null;
 };
 
 export type ResumeDocumentResponse = {
