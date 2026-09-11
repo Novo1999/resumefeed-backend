@@ -12,8 +12,8 @@ paid review or a black-box ATS score.
 ### The post
 
 **Resume**:
-A public feed post: one PDF document plus the metadata shown on its card. The file
-itself stays private; the post is the public thing.
+A community-visible feed post: one PDF document plus the metadata shown on its
+card. The file itself stays private.
 _Avoid_: Post, CV, upload
 
 **Owner**:
@@ -56,3 +56,25 @@ _Avoid_: Score, stars, vote
 A one-tap response of a fixed kind, left on either a resume or a comment. One per
 author per thing reacted to; picking a different kind replaces the previous one.
 _Avoid_: Emoji, like
+
+### Notifications
+
+**Notification**:
+An alert to a person that another person has newly commented on or reacted to their
+resume, newly rated their resume, reacted to their comment, or replied to their
+comment or reply. Changing an existing reaction or rating is not a new notification.
+A notification is unread until its recipient opens it, unless they intentionally
+mark it read.
+Each reply notifies only the person directly answered, even when the reply is
+displayed in another person's thread.
+Each notification represents one activity event and is never grouped with others.
+Notifications are in-app only.
+Opening feedback-related notifications focuses the affected comment or reply in its
+resume's thread; opening a resume-reaction notification opens that resume.
+Notifications are shown newest first.
+Notifications remain historical records when their source is deleted, but their
+destination then states that the feedback is no longer available.
+Notifications do not expire automatically.
+When a reaction is removed, its notification remains but identifies the reaction as
+removed. Re-adding that reaction creates a new notification.
+_Avoid_: Alert, activity

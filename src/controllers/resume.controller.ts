@@ -3,6 +3,7 @@ import { sendServiceError } from './service-error.controller';
 import {
   createResume,
   getResumeDocument,
+  getResumeDetail,
   getResumeFeed,
   getResumeReactors,
   parseResumeRating,
@@ -34,6 +35,14 @@ export async function listResumes(req: Request, res: Response) {
 
   try {
     res.json(await getResumeFeed(cursor, req.user!.id));
+  } catch (err) {
+    sendServiceError(err, res);
+  }
+}
+
+export async function getResume(req: Request, res: Response) {
+  try {
+    res.json(await getResumeDetail(req.params.resumeId, req.user!.id));
   } catch (err) {
     sendServiceError(err, res);
   }

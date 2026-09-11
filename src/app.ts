@@ -7,6 +7,7 @@ import { httpLogger } from './middleware/logger';
 import { commentRouter } from './routes/comments';
 import { meRouter } from './routes/me';
 import { resumeRouter } from './routes/resumes';
+import { notificationRouter } from './routes/notifications';
 
 export function createApp() {
   const app = express();
@@ -35,6 +36,7 @@ export function createApp() {
   app.use('/api/me', withDatabase, meRouter);
   app.use('/api/resumes', withDatabase, resumeRouter);
   app.use('/api/comments', withDatabase, commentRouter);
+  app.use('/api/notifications', withDatabase, notificationRouter);
 
   return app;
 }

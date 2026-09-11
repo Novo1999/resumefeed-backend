@@ -14,6 +14,7 @@ import type {
   FeedResumeResponse,
   ParsedResumeCreate,
   ResumeDocumentResponse,
+  ResumeDetailResponse,
   ResumeFeedResponse,
   ResumeFieldErrors,
   ResumeResponse,
@@ -312,6 +313,38 @@ export async function getResumeDocument(resumeId: string): Promise<ResumeDocumen
   const resume = await AppDataSource.getRepository(Resume).findOneBy({ id: resumeId });
   if (!resume) throw new ServiceError('Resume not found.', 'not_found');
   return { url: await createPdfUrl(resume.storagePath), expiresIn: PDF_URL_TTL_SECONDS };
+}
+
+export async function getResumeDetail(
+  resumeId: string,
+  viewerId: string,
+): Promise<ResumeDetailResponse> {
+  assertDatabase();
+  assertUuid(resumeId, 'resume ID');
+  const resume = await AppDataSource.getRepository(Resume).findOneBy({ id: resumeId });
+  if (!resume) throw new ServiceError('Resume not found.', 'not_found');
+  const [authors, viewerRating, viewerReaction, reactionCounts] = await Promise.all([
+    loadPublicProfiles([resume.ownerId]),
+    AppDataSource.getRepository(ResumeRating).findOneBy({ resumeId, authorId: viewerId }),
+    AppDataSource.getRepository(ResumeReaction).findOneBy({ resumeId, authorId: viewerId }),
+    loadReactionCounts([resumeId]),
+  ]);
+  return {
+    id: resume.id,
+    title: resume.title,
+    caption: resume.caption,
+    originalFilename: resume.originalFilename,
+    author: authors.get(resume.ownerId) ?? unknownProfile(resume.ownerId),
+    pdfUrl: await createPdfUrl(resume.storagePath),
+    ratingCount: resume.ratingCount,
+    averageRating: resume.averageRating,
+    viewerRating: viewerRating?.score ?? null,
+    commentCount: resume.commentCount,
+    reactionCount: resume.reactionCount,
+    reactionCounts: reactionCounts.get(resumeId) ?? emptyReactionCounts(),
+    viewerReaction: viewerReaction?.kind ?? null,
+    createdAt: resume.createdAt.toISOString(),
+  };
 }
 
 export function emptyReactionCounts(): ReactionCounts {

@@ -447,6 +447,40 @@ export async function getCommentReplies(
   };
 }
 
+/** One complete thread for notification deep links, regardless of ordinary pagination. */
+export async function getCommentContext(
+  commentId: string,
+  viewerId: string,
+): Promise<CommentThread> {
+  assertDatabase();
+  const target = await findCommentOrFail(commentId);
+  if (target.deletedAt !== null)
+    throw new ServiceError('That feedback is no longer available.', 'not_found');
+  const rootId = target.parentId ?? target.id;
+  const [root, replies] = await Promise.all([
+    AppDataSource.getRepository(ResumeComment).findOneByOrFail({ id: rootId }),
+    AppDataSource.getRepository(ResumeComment).find({
+      where: { parentId: rootId },
+      order: { createdAt: 'ASC', id: 'ASC' },
+    }),
+  ]);
+  const resume = await findResumeOrFail(root.resumeId);
+  const all = [root, ...replies];
+  const [profiles, reactions] = await Promise.all([
+    loadPublicProfiles(profileIds(all)),
+    loadCommentReactions(
+      all.map((comment) => comment.id),
+      viewerId,
+    ),
+  ]);
+  return {
+    ...serializeComment(root, profiles, reactions, viewerId, resume.ownerId),
+    replies: replies.map((reply) =>
+      serializeComment(reply, profiles, reactions, viewerId, resume.ownerId),
+    ),
+  };
+}
+
 /** Sets, replaces, or clears the caller's reaction on one comment. */
 export async function reactToComment(
   commentId: string,

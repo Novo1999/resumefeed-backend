@@ -4,6 +4,7 @@ import {
   createReply,
   deleteComment,
   getCommentReplies,
+  getCommentContext,
   getCommentThreads,
   parseCommentBody,
   reactToComment,
@@ -58,6 +59,14 @@ export async function listCommentReplies(req: Request, res: Response) {
 
   try {
     res.json(await getCommentReplies(req.params.commentId, req.user!.id, cursor));
+  } catch (err) {
+    sendServiceError(err, res);
+  }
+}
+
+export async function getCommentThreadContext(req: Request, res: Response) {
+  try {
+    res.json(await getCommentContext(req.params.commentId, req.user!.id));
   } catch (err) {
     sendServiceError(err, res);
   }

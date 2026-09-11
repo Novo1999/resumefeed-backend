@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   listCommentReplies,
+  getCommentThreadContext,
   patchComment,
   postReply,
   putCommentReaction,
@@ -15,6 +16,7 @@ import { requireAuth } from '../middleware/auth';
  */
 export const commentRouter = Router();
 
+commentRouter.get('/:commentId/context', requireAuth, getCommentThreadContext);
 commentRouter.get('/:commentId/replies', requireAuth, listCommentReplies);
 commentRouter.post('/:commentId/replies', requireAuth, postReply);
 commentRouter.put('/:commentId/reaction', requireAuth, putCommentReaction);

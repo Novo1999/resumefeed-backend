@@ -109,6 +109,9 @@ export type ResumeFeedResponse = {
   nextCursor: string | null;
 };
 
+/** One Resume enriched exactly as it appears in the feed, for the detail route. */
+export type ResumeDetailResponse = FeedResumeResponse;
+
 export type ResumeDocumentResponse = {
   url: string;
   expiresIn: number;
