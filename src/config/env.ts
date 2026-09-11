@@ -11,7 +11,9 @@ export const env = {
   logFormat: process.env.LOG_FORMAT || undefined,
 
   databaseUrl: process.env.DATABASE_URL ?? '',
-  dbSynchronize: process.env.DB_SYNCHRONIZE !== 'false',
+  // Migrations are now the default. Set this to true only for disposable local DBs.
+  dbSynchronize: process.env.DB_SYNCHRONIZE === 'true',
+  dbMigrationsRun: process.env.DB_MIGRATIONS_RUN !== 'false',
   dbLogging: process.env.DB_LOGGING === 'true',
   dbSsl: process.env.DB_SSL !== 'false',
 

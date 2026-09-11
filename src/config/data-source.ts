@@ -14,5 +14,6 @@ export const AppDataSource = new DataSource({
   ssl: env.dbSsl ? { rejectUnauthorized: false } : false,
   entities: [__dirname + '/../entities/**/*.{ts,js}'],
   migrations: [__dirname + '/../migrations/**/*.{ts,js}'],
+  migrationsRun: env.dbMigrationsRun,
   subscribers: [],
 });

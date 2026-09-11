@@ -62,7 +62,7 @@ Key files:
 | `GET /api/me`, `PATCH /api/me` | Done — profile read/update |
 | Storage buckets + RLS policies | Done — `supabase/storage-setup.sql` |
 | TypeORM DataSource against Supabase Postgres | Configured, connects lazily |
-| Entities | **None** — `src/entities/` holds only `.gitkeep` |
+| Entities + first migration | Done — Resume, rating, comment, and reaction model |
 | Resume, review, rating routes | Not started |
 
 Key files:
@@ -82,9 +82,9 @@ These are the specific places the two halves don't meet yet.
 The `/api` prefix, the bearer token and server-readable sessions are all closed —
 `GET`/`PATCH /api/me` exercises the whole chain end to end. What is left:
 
-1. **No domain model exists.** No entities, no migrations, no shared types. Resume,
-   Review, Rating, and Reaction all still need defining — and nothing currently
-   shares those shapes between the repos. `MeResponse` is hand-mirrored in
+1. **Feed API shapes are not shared yet.** The database domain model is now in the
+   backend, but feed responses still need a shared contract (or generated client)
+   before the frontend consumes them. `MeResponse` is hand-mirrored in
    `src/routes/me.ts` and `store/api/profileApi.ts`; they drift silently.
 
 2. **Profile changes are invisible to client components.** `PATCH /api/me` updates
@@ -123,11 +123,30 @@ The `/api` prefix, the bearer token and server-readable sessions are all closed 
   header and account page read them straight off the session with no join. Revisit
   when a profile needs anything a reviewer would search on.
 
+- **Resume feed data model.** A `resumes` row is a public feed post and belongs to
+  one Supabase Auth user through `owner_id`. It stores immutable PDF metadata and
+  the relative `storage_path` in the existing private `resumes` bucket — never a
+  permanent object URL. Every path must remain `{owner_id}/{filename}.pdf` to meet
+  the storage RLS policy.
+
+  - `resume_ratings` holds a 1–5 score and has one row per `(resume_id, author_id)`;
+    changing a score updates that same row.
+  - `resume_comments` holds written feedback (up to 2,000 characters).
+  - `resume_reactions` holds `helpful`, `insightful`, or `encouraging`; a person may
+    use each kind once per resume.
+  - `resumes.average_rating`, `rating_count`, `comment_count`, and `reaction_count`
+    are feed-card aggregates. Database triggers maintain them on every child-row
+    insert, update, and delete; an unrated resume has `average_rating = null`.
+
+  Auth users are intentionally not duplicated or foreign-keyed in this schema;
+  Supabase Auth remains the profile source of truth. API responses will hydrate an
+  owner/commenter name and avatar from there.
+
 ## Open decisions
 
-- **`DB_SYNCHRONIZE` defaults to `true`.** Fine for moving fast now; it will drop
-  columns on you once there's real data. Plan to flip it off and generate a first
-  migration before anything ships.
+- **Schema changes now use migrations.** `DB_MIGRATIONS_RUN=true` applies pending
+  TypeORM migrations at backend startup; `DB_SYNCHRONIZE` now defaults to `false`.
+  Set synchronization to true only for a disposable local database.
 
 - **Where does moderation live?** Public resumes are PII (names, emails, phone
   numbers, employers). Worth deciding early whether uploads are public by default,
@@ -140,8 +159,8 @@ The `/api` prefix, the bearer token and server-readable sessions are all closed 
 - ~~**Profiles and storage**~~ — done: both buckets with RLS, avatar upload,
   `PATCH /api/me`.
 
-1. **Domain model** — Resume, Review, Rating, Reaction entities + first migration,
-   so both repos agree on shapes.
+1. ~~**Domain model**~~ — Resume, rating, comment, and reaction entities plus the
+   first migration are complete.
 2. **Landing page** — the marketing pitch; first thing anyone sees.
 3. **Upload** — a PDF into `resumes/{user_id}/`, plus the resume record. The avatar
    path in `lib/storage/avatars.ts` is the template; resumes differ only in that
