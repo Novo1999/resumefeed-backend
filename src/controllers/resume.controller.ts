@@ -3,6 +3,8 @@ import {
   createResume,
   getResumeDocument,
   getResumeFeed,
+  parseResumeRating,
+  rateResume,
   parseResumeCreate,
   ResumeServiceError,
 } from '../services/resume.service';
@@ -43,7 +45,16 @@ export async function listResumes(req: Request, res: Response) {
   }
 
   try {
-    res.json(await getResumeFeed(cursor));
+    res.json(await getResumeFeed(cursor, req.user!.id));
+  } catch (err) {
+    sendResumeError(err, res);
+  }
+}
+
+export async function putResumeRating(req: Request, res: Response) {
+  try {
+    const { score } = parseResumeRating(req.body);
+    res.json(await rateResume(req.params.resumeId, req.user!.id, score));
   } catch (err) {
     sendResumeError(err, res);
   }

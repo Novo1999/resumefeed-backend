@@ -43,6 +43,10 @@ export class Resume {
   @Column({ type: 'varchar', length: 120, nullable: true })
   title!: string | null;
 
+  /** Optional public context shown above the resume preview in the feed. */
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  caption!: string | null;
+
   @Column({ name: 'mime_type', type: 'varchar', length: 100, default: 'application/pdf' })
   mimeType!: 'application/pdf';
 

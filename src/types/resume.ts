@@ -9,6 +9,8 @@ export type CreateResumeRequest = {
   originalFilename: string;
   /** An optional label for a feed card. */
   title?: string | null;
+  /** Optional public context displayed above the PDF preview. */
+  caption?: string | null;
 };
 
 export type ResumeResponse = {
@@ -17,6 +19,7 @@ export type ResumeResponse = {
   storagePath: string;
   originalFilename: string;
   title: string | null;
+  caption: string | null;
   ratingCount: number;
   averageRating: number | null;
   commentCount: number;
@@ -24,7 +27,18 @@ export type ResumeResponse = {
   createdAt: string;
 };
 
-export type ResumeFieldErrors = Partial<Record<'storagePath' | 'originalFilename' | 'title', string>>;
+export type RateResumeRequest = {
+  score: number;
+};
+
+export type ResumeRatingResponse = {
+  resumeId: string;
+  viewerRating: number;
+  ratingCount: number;
+  averageRating: number | null;
+};
+
+export type ResumeFieldErrors = Partial<Record<'storagePath' | 'originalFilename' | 'title' | 'caption', string>>;
 
 export type ParsedResumeCreate = {
   values: CreateResumeRequest | null;
@@ -49,11 +63,14 @@ export type ResumeAuthor = {
 export type FeedResumeResponse = {
   id: string;
   title: string | null;
+  caption: string | null;
   originalFilename: string;
   author: ResumeAuthor;
   pdfUrl: string;
   ratingCount: number;
   averageRating: number | null;
+  /** The signed-in viewer's score, if they have rated this resume. */
+  viewerRating: number | null;
   commentCount: number;
   reactionCount: number;
   createdAt: string;

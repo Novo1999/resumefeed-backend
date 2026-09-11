@@ -2,6 +2,7 @@ import { AppDataSource } from '../config/data-source';
 import { env } from '../config/env';
 import { getSupabase } from '../config/supabase';
 import { Resume } from '../entities/resume';
+import { ResumeRating } from '../entities/resume-rating';
 import type {
   CreateResumeRequest,
   FeedResumeResponse,
@@ -11,10 +12,13 @@ import type {
   ResumeFeedResponse,
   ResumeFieldErrors,
   ResumeResponse,
+  ResumeRatingResponse,
   ResumeServiceErrorKind,
+  RateResumeRequest,
 } from '../types/resume';
 
 const TITLE_MAX_LENGTH = 120;
+const CAPTION_MAX_LENGTH = 500;
 const FILENAME_MAX_LENGTH = 255;
 const FEED_PAGE_SIZE = 10;
 const PDF_URL_TTL_SECONDS = 10 * 60;
@@ -48,12 +52,17 @@ function serializeResume(resume: Resume): ResumeResponse {
     storagePath: resume.storagePath,
     originalFilename: resume.originalFilename,
     title: resume.title,
+    caption: resume.caption,
     ratingCount: resume.ratingCount,
     averageRating: resume.averageRating,
     commentCount: resume.commentCount,
     reactionCount: resume.reactionCount,
     createdAt: resume.createdAt.toISOString(),
   };
+}
+
+function assertResumeId(resumeId: string): void {
+  if (!UUID_PATTERN.test(resumeId)) throw new ResumeServiceError('Invalid resume ID.', 'bad_request');
 }
 
 function encodeFeedCursor(cursor: FeedCursor): string {
@@ -92,6 +101,7 @@ export function parseResumeCreate(body: unknown, userId: string): ParsedResumeCr
   const storagePath = input.storagePath;
   const originalFilename = input.originalFilename;
   const title = input.title;
+  const caption = input.caption;
 
   if (typeof storagePath !== 'string') errors.storagePath = 'Storage path is required.';
   else {
@@ -127,10 +137,35 @@ export function parseResumeCreate(body: unknown, userId: string): ParsedResumeCr
     }
   }
 
+  let parsedCaption: string | null = null;
+  if (caption !== undefined && caption !== null) {
+    if (typeof caption !== 'string') errors.caption = 'Caption must be text.';
+    else {
+      const trimmed = caption.trim();
+      if (trimmed.length > CAPTION_MAX_LENGTH) errors.caption = `Caption must be ${CAPTION_MAX_LENGTH} characters or fewer.`;
+      else parsedCaption = trimmed || null;
+    }
+  }
+
   if (Object.keys(errors).length > 0 || typeof storagePath !== 'string' || typeof originalFilename !== 'string') {
     return { values: null, errors };
   }
-  return { values: { storagePath, originalFilename: originalFilename.trim(), title: parsedTitle }, errors };
+  return {
+    values: { storagePath, originalFilename: originalFilename.trim(), title: parsedTitle, caption: parsedCaption },
+    errors,
+  };
+}
+
+export function parseResumeRating(body: unknown): RateResumeRequest {
+  if (typeof body !== 'object' || body === null || !Number.isInteger((body as { score?: unknown }).score)) {
+    throw new ResumeServiceError('Rating score must be a whole number from 1 to 5.', 'bad_request');
+  }
+
+  const score = (body as { score: number }).score;
+  if (score < 1 || score > 5) {
+    throw new ResumeServiceError('Rating score must be between 1 and 5.', 'bad_request');
+  }
+  return { score };
 }
 
 async function hasUploadedPdf(userId: string, storagePath: string): Promise<boolean> {
@@ -192,6 +227,7 @@ export async function createResume(userId: string, values: CreateResumeRequest):
         storagePath: values.storagePath,
         originalFilename: values.originalFilename,
         title: values.title ?? null,
+        caption: values.caption ?? null,
         mimeType: 'application/pdf',
       }),
     );
@@ -204,7 +240,37 @@ export async function createResume(userId: string, values: CreateResumeRequest):
   }
 }
 
-export async function getResumeFeed(cursor?: string): Promise<ResumeFeedResponse> {
+/** Creates or replaces the caller's single rating and returns refreshed feed totals. */
+export async function rateResume(
+  resumeId: string,
+  userId: string,
+  score: number,
+): Promise<ResumeRatingResponse> {
+  assertDatabase();
+  assertResumeId(resumeId);
+
+  const resumeRepository = AppDataSource.getRepository(Resume);
+  if (!(await resumeRepository.existsBy({ id: resumeId }))) {
+    throw new ResumeServiceError('Resume not found.', 'not_found');
+  }
+
+  await AppDataSource.getRepository(ResumeRating).upsert(
+    { resumeId, authorId: userId, score },
+    { conflictPaths: ['resumeId', 'authorId'] },
+  );
+
+  // The database trigger owns aggregate maintenance, so always reload its
+  // result instead of reproducing averaging logic in the write path.
+  const refreshed = await resumeRepository.findOneByOrFail({ id: resumeId });
+  return {
+    resumeId,
+    viewerRating: score,
+    ratingCount: refreshed.ratingCount,
+    averageRating: refreshed.averageRating,
+  };
+}
+
+export async function getResumeFeed(cursor: string | undefined, viewerId: string): Promise<ResumeFeedResponse> {
   assertDatabase();
   const parsedCursor = parseFeedCursor(cursor);
   const query = AppDataSource.getRepository(Resume)
@@ -235,15 +301,22 @@ export async function getResumeFeed(cursor?: string): Promise<ResumeFeedResponse
       : null;
 
   const authors = await loadAuthors(resumes.map((resume) => resume.ownerId));
+  const viewerRatings = await AppDataSource.getRepository(ResumeRating).findBy({
+    authorId: viewerId,
+    resumeId: resumes.map((resume) => resume.id),
+  });
+  const viewerRatingByResumeId = new Map(viewerRatings.map((rating) => [rating.resumeId, rating.score]));
   const items: FeedResumeResponse[] = await Promise.all(
     resumes.map(async (resume) => ({
       id: resume.id,
       title: resume.title,
+      caption: resume.caption,
       originalFilename: resume.originalFilename,
       author: authors.get(resume.ownerId) ?? { id: resume.ownerId, fullName: null, avatarUrl: null },
       pdfUrl: await createPdfUrl(resume.storagePath),
       ratingCount: resume.ratingCount,
       averageRating: resume.averageRating,
+      viewerRating: viewerRatingByResumeId.get(resume.id) ?? null,
       commentCount: resume.commentCount,
       reactionCount: resume.reactionCount,
       createdAt: resume.createdAt.toISOString(),
@@ -254,9 +327,7 @@ export async function getResumeFeed(cursor?: string): Promise<ResumeFeedResponse
 
 export async function getResumeDocument(resumeId: string): Promise<ResumeDocumentResponse> {
   assertDatabase();
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(resumeId)) {
-    throw new ResumeServiceError('Invalid resume ID.', 'bad_request');
-  }
+  assertResumeId(resumeId);
   const resume = await AppDataSource.getRepository(Resume).findOneBy({ id: resumeId });
   if (!resume) throw new ResumeServiceError('Resume not found.', 'not_found');
   return { url: await createPdfUrl(resume.storagePath), expiresIn: PDF_URL_TTL_SECONDS };
