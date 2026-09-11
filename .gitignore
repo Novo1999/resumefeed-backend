@@ -6,3 +6,6 @@ dist/
 npm-debug.log*
 .DS_Store
 coverage/
+
+# claude skills (junctions/symlinks into .agents/skills)
+/.claude/skills/
