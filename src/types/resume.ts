@@ -25,3 +25,33 @@ export type ResumeResponse = {
 };
 
 export type ResumeFieldErrors = Partial<Record<'storagePath' | 'originalFilename' | 'title', string>>;
+
+/** Public profile fields safe to show beside a feed post. */
+export type ResumeAuthor = {
+  id: string;
+  fullName: string | null;
+  avatarUrl: string | null;
+};
+
+/** A resume post enriched for a feed card. `pdfUrl` is short-lived and never stored. */
+export type FeedResumeResponse = {
+  id: string;
+  title: string | null;
+  originalFilename: string;
+  author: ResumeAuthor;
+  pdfUrl: string;
+  ratingCount: number;
+  averageRating: number | null;
+  commentCount: number;
+  reactionCount: number;
+  createdAt: string;
+};
+
+export type ResumeFeedResponse = {
+  items: FeedResumeResponse[];
+};
+
+export type ResumeDocumentResponse = {
+  url: string;
+  expiresIn: number;
+};
